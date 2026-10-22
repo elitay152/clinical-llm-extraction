@@ -3,5 +3,6 @@
   "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "license": "Apache-2.0",
   "max_length": 2048,
-  "prompt_file": "student-prompt.txt"
+  "prompt_file": "student-sentence-prompt.txt",
+  "evidence_mode": "sentence_ids"
 }

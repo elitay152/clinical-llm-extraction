@@ -1,7 +1,8 @@
 # Distillation workflow
 
 Follow the [quick start](../README.md#quick-start) for installation and credentials.
-The student checkpoint is pinned in `configs/student.json`. Evaluation definitions and limitations are in [experiment design](experiment.md).
+The student checkpoint and evidence mode are configured in `configs/student.json`.
+Evaluation definitions and limitations are in [experiment design](experiment.md).
 
 ## Inputs and labeling
 
@@ -33,6 +34,26 @@ supporting quotes, and quotes that occur exactly once in the input. Python
 computes Unicode offsets. Empty outputs require quoted denial evidence.
 Accepted records retain `teacher_generated` provenance; rejected responses and
 reasons remain available for inspection.
+
+## Sentence-ID evidence
+
+The student receives numbered source sentences and returns integer
+`evidence_sentence_ids` for each medication, plus `negative_evidence_sentence_ids`
+for an explicit denial. Code resolves IDs to exact text and Unicode offsets;
+unknown, duplicate, or non-integer IDs are rejected. Medication names and populated
+attributes must still occur verbatim in the selected evidence.
+
+Teacher quotes are converted to overlapping sentence IDs without changing their
+medication fields. Adjacent selected sentences resolve to a contiguous source span,
+including the original whitespace. Repeated sentences remain distinguishable by ID.
+Segmentation uses deterministic punctuation/line boundaries with abbreviation
+handling; it is a source indexing rule, not a clinical sentence parser.
+
+`evidence_mode: sentence_ids` uses `configs/student-sentence-prompt.txt`.
+Quote-based output is supported by `evidence_mode: quotes` and
+`configs/student-prompt.txt`. The run saves the mode, prompt, and segmentation
+version for evaluation. Exact source retrieval does not prove that the selected
+sentence supports the medication or its attributes.
 
 ## Train and compare
 

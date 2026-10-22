@@ -38,8 +38,7 @@ blocked for frozen experiments. Keep the test set unlabeled until model, prompt,
 and training choices are finalized. Development data supports those choices;
 only training rows reach the optimizer. See [label acceptance rules](distillation.md).
 
-The student is pinned in `configs/student.json`; its prompt is in
-`configs/student-prompt.txt`. Training snapshots the prompt and model revision.
+The student is pinned in `configs/student.json`; its prompt file and evidence mode are specified there. Training snapshots the prompt and model revision.
 
 ```bash
 .venv/bin/python scripts/train_distillation.py data/silver/my-experiment \
@@ -54,7 +53,7 @@ Both checkpoints use the saved training prompt and greedy decoding. Report JSON
 validity, schema/evidence validity, exact-document agreement, and medication-record
 precision/recall/F1 against teacher references. Record equality is case-sensitive
 and includes name, strength, dose, route, frequency, and status, retaining
-multiplicity. Evidence offsets are validated separately from record equality.
+multiplicity. Evidence IDs are resolved to source spans and validated separately from record equality.
 Invalid responses count as empty predictions and receive no exact-document
 credit. All-empty record comparisons have undefined F1; zero-reference runs fail.
 Generation timings include first-use overhead and are not production benchmarks.

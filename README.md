@@ -33,7 +33,8 @@ upstream data terms before redistribution.
 
 For a frozen train/development/test experiment, use the
 [split and labeling workflow](docs/experiment.md). The student checkpoint and
-prompt are configured in `configs/student.json` and `configs/student-prompt.txt`.
+prompt are configured in `configs/student.json`. The student selects source
+sentence IDs; code retrieves the evidence text and offsets.
 
 ## Tests
 

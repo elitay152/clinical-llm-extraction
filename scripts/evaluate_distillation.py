@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.pseudo_label import validate_teacher_response
 from scripts.train_distillation import read_splits
+from scripts.sentence_evidence import MODE, VERSION, render_source, resolve_response
 
 
 def saved_prompt(report):
@@ -26,7 +27,9 @@ def record_key(record):
     return json.dumps({key: record[key] for key in ('name', 'strength', 'dose', 'route', 'frequency', 'status')}, sort_keys=True)
 
 
-def score(reference, predictions):
+def score(reference, predictions, evidence_mode='quotes'):
+    if evidence_mode not in ('quotes', MODE):
+        raise ValueError('Unsupported evidence mode')
     if not reference:
         raise ValueError('No held-out teacher references; refusing zero-example metrics')
     by_id = {p['id']: p for p in predictions}
@@ -39,7 +42,7 @@ def score(reference, predictions):
         candidate = dict(ref, input_sha256=ref['input_sha256'])
         try:
             json.loads(prediction['response']); json_valid += 1
-            parsed = validate_teacher_response(candidate, prediction['response'])
+            parsed = resolve_response(candidate, prediction['response']) if evidence_mode == MODE else validate_teacher_response(candidate, prediction['response'])
             valid += 1
             actual = collections.Counter(record_key(r) for r in parsed['medications'])
         except (ValueError, TypeError, KeyError) as error:
@@ -80,6 +83,9 @@ def main():
     if set(report['source_groups']) & {r['source_group'] for r in references}:
         raise ValueError('Evaluation source groups overlap trained examples')
     system_prompt = saved_prompt(report)
+    evidence_mode = report.get('evidence_mode', 'quotes')
+    if evidence_mode == MODE and report.get('sentence_version') != VERSION:
+        raise ValueError('Sentence segmentation version differs from the training run')
     os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -94,7 +100,7 @@ def main():
         model.eval(); predictions = []
         for ref in references:
             prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': system_prompt},
-                     {'role': 'user', 'content': ref['text']}], tokenize=False, add_generation_prompt=True)
+                     {'role': 'user', 'content': render_source(ref['text'], evidence_mode)}], tokenize=False, add_generation_prompt=True)
             tokens = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             if tokens['input_ids'].shape[1] + args.max_tokens > model.config.max_position_embeddings:
                 raise ValueError('Evaluation exceeds model context; refusing silent truncation')
@@ -111,12 +117,12 @@ def main():
     model = PeftModel.from_pretrained(model, args.run, local_files_only=True)
     adapted = predict(model)
     (args.output / 'adapted.json').write_text(json.dumps(adapted, indent=2) + '\n')
-    result = {'baseline': score(references, baseline), 'adapted': score(references, adapted),
-              'reference_origin': 'teacher_generated', 'reference_split': reference_split, 'model': report['model'], 'revision': report['revision'],
+    result = {'baseline': score(references, baseline, evidence_mode), 'adapted': score(references, adapted, evidence_mode),
+              'evidence_mode': evidence_mode, 'reference_origin': 'teacher_generated', 'reference_split': reference_split, 'model': report['model'], 'revision': report['revision'],
               'reference_ids': [r['id'] for r in references], 'max_tokens': args.max_tokens,
               'decoding': 'greedy', 'device': 'cpu', 'threads': report['threads'],
               'limitations': ['Very small silver-reference comparison; no clinical gold labels.',
-                              'Exact-text grouping only; article/patient overlap remains unresolved.',
+                              'Source-text grouping does not establish article/patient independence.',
                               'Exact record scoring excludes evidence position agreement; evidence source matches are validated.',
                               'Generation times include model first-use overhead and are not production latency benchmarks.']}
     (args.output / 'comparison.json').write_text(json.dumps(result, indent=2) + '\n')

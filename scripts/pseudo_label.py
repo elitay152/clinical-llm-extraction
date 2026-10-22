@@ -138,23 +138,32 @@ def validate_teacher_response(candidate, response):
         raise ValueError('Teacher output arrays are missing')
     text = candidate['text']
     negative = [quote_span(text, quote) for quote in payload['negative_evidence']]
-    if not payload['medications'] and not negative:
-        raise ValueError('Unverified negative: no explicit denial evidence supplied')
-    if payload['medications'] and negative:
-        raise ValueError('Positive record cannot also claim no medication use')
     medications = []
     for med in payload['medications']:
         if not isinstance(med, dict) or set(med) != FIELDS:
             raise ValueError('Medication fields do not match the schema')
         if not isinstance(med['evidence'], list):
             raise ValueError('Medication evidence must be an array')
-        converted = dict(med, evidence=[quote_span(text, quote) for quote in med['evidence']])
+        medications.append(dict(med, evidence=[quote_span(text, quote) for quote in med['evidence']]))
+    return validate_resolved_response(candidate, medications, negative)
+
+
+def validate_resolved_response(candidate, medications, negative):
+    text = candidate['text']
+    if not medications and not negative:
+        raise ValueError('Unverified negative: no explicit denial evidence supplied')
+    if medications and negative:
+        raise ValueError('Positive record cannot also claim no medication use')
+    for span in negative:
+        if (set(span) != {'start', 'end', 'text'} or type(span['start']) is not int or type(span['end']) is not int or
+                not 0 <= span['start'] < span['end'] <= len(text) or text[span['start']:span['end']] != span['text']):
+            raise ValueError('Negative evidence does not match source')
+    for med in medications:
         for field in ('strength', 'dose', 'route', 'frequency'):
-            value = converted[field]
+            value = med[field]
             if value is not None and (not isinstance(value, str) or not value.strip() or
-                                      not any(value in span['text'] for span in converted['evidence'])):
+                                      not any(value in span['text'] for span in med['evidence'])):
                 raise ValueError(f'{field} must occur verbatim in attached evidence or be null')
-        medications.append(converted)
     doc = {'id': candidate['id'], 'text': text, 'medications': medications, 'annotation_status': 'draft'}
     validate_document(doc)
     return {'id': candidate['id'], 'text': text, 'medications': medications,

@@ -12,6 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.pseudo_label import SYSTEM
+from scripts.sentence_evidence import MODE, VERSION, render_source, sentence_payload, resolve_response
 
 
 def response_payload(record):
@@ -19,13 +20,16 @@ def response_payload(record):
             'negative_evidence': [s['text'] for s in record['negative_evidence']]}
 
 
-def encode_record(record, tokenizer, max_length, system_prompt=SYSTEM):
+def encode_record(record, tokenizer, max_length, system_prompt=SYSTEM, evidence_mode='quotes'):
     if record['label_origin'] != 'teacher_generated' or record['split'] != 'train':
         raise ValueError('Training accepts teacher-generated training rows only')
     prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': system_prompt},
-             {'role': 'user', 'content': record['text']}], tokenize=False, add_generation_prompt=True)
+             {'role': 'user', 'content': render_source(record['text'], evidence_mode)}], tokenize=False, add_generation_prompt=True)
     prompt_ids = tokenizer(prompt, add_special_tokens=False)['input_ids']
-    answer_ids = tokenizer(json.dumps(response_payload(record), ensure_ascii=False) + tokenizer.eos_token,
+    payload = sentence_payload(record) if evidence_mode == MODE else response_payload(record)
+    if evidence_mode == MODE:
+        resolve_response(record, json.dumps(payload))
+    answer_ids = tokenizer(json.dumps(payload, ensure_ascii=False) + tokenizer.eos_token,
                            add_special_tokens=False)['input_ids']
     if len(prompt_ids) + len(answer_ids) > max_length:
         return None
@@ -99,7 +103,7 @@ def main():
     set_seed(42)
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
-    examples = [e for r in train if (e := encode_record(r, tokenizer, args.max_length, student_prompt)) is not None]
+    examples = [e for r in train if (e := encode_record(r, tokenizer, args.max_length, student_prompt, config.get('evidence_mode', 'quotes'))) is not None]
     if len(examples) < 2:
         raise ValueError('Too few examples fit context. No targets were truncated.')
     model = AutoModelForCausalLM.from_pretrained(model_name, revision=revision, torch_dtype=torch.float32, attn_implementation='eager')
@@ -130,6 +134,7 @@ def main():
               'silver_directory': str(args.silver_directory.resolve()), 'system_prompt': student_prompt, 'prompt_sha256': hashlib.sha256(student_prompt.encode()).hexdigest(),
               'train_file_sha256': hashlib.sha256((args.silver_directory / 'train.jsonl').read_bytes()).hexdigest(),
               'training_ids': [e['id'] for e in examples], 'source_groups': [e['source_group'] for e in examples],
+              'evidence_mode': config.get('evidence_mode', 'quotes'), 'sentence_version': VERSION if config.get('evidence_mode') == MODE else None,
               'max_length': args.max_length, 'steps': args.steps, 'seed': 42, 'learning_rate': 2e-4,
               'batch_size': 1, 'device': 'cpu', 'attention_implementation': 'eager', 'threads': torch.get_num_threads(),
               'lora': {'r': 8, 'alpha': 16, 'dropout': 0.05, 'target_modules': ['q_proj', 'v_proj']},
