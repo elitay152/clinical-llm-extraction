@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Medication annotation pilot</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#183239;background:#f3f6f5;font-size:15px}*{box-sizing:border-box}body{margin:0}header{background:#183f42;color:white;padding:22px 28px}h1{font-size:24px;margin:0 0 8px}header p{margin:0;max-width:950px;color:#d8e8e5}.toolbar{display:flex;gap:10px;flex-wrap:wrap;padding:16px 28px;align-items:center;background:white;border-bottom:1px solid #cddbd7}button,.filebutton{font:inherit;padding:8px 12px;border:1px solid #9fb5b0;border-radius:6px;background:white;color:#183f42;cursor:pointer}button:hover,.filebutton:hover{background:#edf4f1}button.primary{background:#13665c;color:white;border-color:#13665c}button:disabled{opacity:.45;cursor:default}.layout{display:grid;grid-template-columns:minmax(300px,1.1fr) minmax(350px,1fr);gap:20px;margin:20px 28px}.panel{background:white;border:1px solid #d0ddd8;border-radius:10px;padding:20px;min-width:0}h2{font-size:19px;margin:0 0 12px}h3{font-size:16px;margin:14px 0 8px}#source{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font:16px/1.7 Georgia,serif;max-height:68vh;overflow:auto;padding:16px;background:#f8faf9;border:1px solid #d9e3df;border-radius:6px}#source::selection{background:#ffdfa0}label{display:block;margin:9px 0;font-size:14px}input[type=text],textarea,select{display:block;font:inherit;width:100%;border:1px solid #a9bdb6;border-radius:5px;padding:8px;margin-top:4px}textarea{min-height:66px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.muted{font-size:13px;color:#536b65}#message{padding:12px 28px;min-height:44px;background:#e5f0ea;overflow-wrap:anywhere}#message.error{background:#ffe9e2;color:#872e13}.badge{padding:3px 8px;border-radius:12px;background:#e5eee9;font-size:13px}#recordlist{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.active{outline:2px solid #13665c}#selection{border-left:3px solid #d4a244;padding:8px 12px;white-space:pre-wrap;max-height:120px;overflow:auto;background:#fff9ed}.evidence{background:#eef4f1;padding:8px;margin:6px 0;border-radius:5px;white-space:pre-wrap;overflow-wrap:anywhere}.evidence button{float:right;font-size:12px;padding:2px 6px}details{margin-top:12px}summary{cursor:pointer}#jump{width:auto;max-width:250px;margin:0}.check{display:flex;gap:8px;align-items:flex-start}.check input{margin-top:3px}.savebar{margin-top:15px;padding-top:12px;border-top:1px solid #d6e1db}#identity{max-width:220px;margin:0}footer{padding:5px 28px 24px}.hidden{display:none!important}@media(max-width:850px){.layout{grid-template-columns:1fr;margin:12px}.toolbar{padding:12px}header{padding:18px}#source{max-height:45vh}.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Medication annotation pilot</h1><p>Read the source, add medication regimens, and select evidence for each record. This is a 20-document development pilot. Generated labels are hidden. Your annotations stay in this browser tab until you export them.</p></header>
+<div class="toolbar"><label class="filebutton">Import saved workspace<input id="import" type="file" accept=".json,application/json" hidden></label><button id="export" class="primary">Export workspace backup</button><button id="exportReviewed">Export reviewed JSONL</button><span id="progress" aria-live="polite"></span><span id="backup" class="badge"></span></div>
+<div id="message" role="status" aria-live="polite">Start by entering an annotator alias. Export a backup regularly; closing the tab loses changes.</div>
+<div class="layout">
+<section class="panel"><div class="row"><button id="previous">← Previous</button><select id="jump" aria-label="Choose document"></select><button id="next">Next →</button></div><h2 id="docTitle" style="margin-top:16px"></h2><p id="docInfo" class="muted"></p><pre id="source" tabindex="0" aria-label="Source text: select evidence here"></pre>
+<details><summary>Annotation rules</summary><p>Extract only the patient's medication use or proposed regimens. Exclude procedures, allergy-only mentions, and medications mentioned solely in literature discussion or another person's history. Do not infer missing facts.</p><p>Separate strength (5 mg per tablet) from dose (two tablets). Use blank fields for unknown values. Preserve wording. Status is relative to the note's reference time: current, explicitly discontinued, historical, hypothetical, or unknown. Create separate records for different regimens or temporal events.</p><p>Evidence spans must support the populated fields and status. Select additional passages when necessary. An explicit denial such as “never took aspirin” is not a medication-use record. Review empty results explicitly. One person's review does not establish independent gold labels.</p><p>Text paragraph separators were normalized before annotation. Offsets refer to the exact source text displayed here, using Unicode characters and an exclusive end offset.</p></details></section>
+<section class="panel"><div class="row"><h2 style="margin:0">Medication records</h2><span id="stage" class="badge"></span><button id="add">+ Add medication</button></div><div id="recordlist"></div><p id="empty" class="muted">No medication records yet. Read the entire source before confirming an empty result.</p>
+<div id="editor" class="hidden"><h3 id="recordTitle"></h3><label>Medication name<input id="name" type="text" autocomplete="off"></label><div class="grid"><label>Strength<input id="strength" type="text" placeholder="Blank if unknown" autocomplete="off"></label><label>Dose<input id="dose" type="text" placeholder="Blank if unknown" autocomplete="off"></label><label>Route<input id="route" type="text" placeholder="Blank if unknown" autocomplete="off"></label><label>Frequency<input id="frequency" type="text" placeholder="Blank if unknown" autocomplete="off"></label></div><label>Status<select id="status"><option>unknown</option><option>current</option><option>discontinued</option><option>historical</option><option>hypothetical</option></select></label>
+<h3>Supporting evidence</h3><p class="muted">Select a passage in the source, then attach it to this medication. You can attach multiple passages.</p><div id="selection">No passage selected.</div><div class="row" style="margin:8px 0"><button id="attach">Attach selected evidence</button><button id="useName">Use selection as name</button></div><div id="evidence"></div><button id="remove">Remove this medication</button></div>
+<div class="savebar"><label>Annotator alias<input id="identity" type="text" placeholder="e.g. reviewer-a" autocomplete="off"></label><label>Questions or decisions for review<textarea id="notes" placeholder="Record uncertainty without guessing"></textarea></label><label class="check"><input id="negative" type="checkbox"><span>I checked the entire source and found no in-scope medication records.</span></label><label class="check"><input id="review" type="checkbox"><span>I checked every record, its attributes, and supporting evidence against the entire source.</span></label><div class="row"><button id="saveDraft">Save draft in tab</button><button id="saveReviewed" class="primary">Mark reviewed in tab</button></div><p class="muted">Saving in this tab does not write a file. Export a workspace backup to keep your work. Draft records need a name and at least one evidence span.</p></div></section></div>
+<footer class="muted">Pilot protocol v1 · Clinical-note and dialogue results must be reported separately · No network requests or model calls</footer>
+<script id="pilot-data" type="application/json">__PILOT_DATA__</script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const clone = value => JSON.parse(JSON.stringify(value));
+const seed = JSON.parse($('pilot-data').textContent);
+let workspace = clone(seed), index = 0, editing, active = -1, selection = null, dirty = false, backupDirty = false;
+const statuses = ['current','discontinued','historical','hypothetical','unknown'];
+const fields = ['name','strength','dose','route','frequency'];
+const chars = s => Array.from(s);
+function message(text, error=false){$('message').textContent=text;$('message').className=error?'error':'';}
+function requireCondition(condition,text){if(!condition)throw new Error(text);}
+function validateDocument(doc){
+ requireCondition(doc && typeof doc==='object' && Object.keys(doc).sort().join(',')==='annotation_status,id,medications,text','Unexpected document fields.');
+ requireCondition(typeof doc.id==='string' && doc.id.trim() && typeof doc.text==='string','Invalid source document.');
+ requireCondition(['unannotated','draft','reviewed'].includes(doc.annotation_status),'Unsupported review stage.');
+ requireCondition(Array.isArray(doc.medications),'Medication records must be a list.');
+ for(const med of doc.medications){
+  requireCondition(med && typeof med==='object' && Object.keys(med).sort().join(',')==='dose,evidence,frequency,name,route,status,strength','Unexpected medication fields.');
+  requireCondition(typeof med.name==='string' && med.name.trim(),'Every medication needs a name.');
+  requireCondition(statuses.includes(med.status),'Invalid medication status.');
+  for(const key of fields.slice(1))requireCondition(med[key]===null || (typeof med[key]==='string' && med[key].trim()),key+' must be blank or text.');
+  requireCondition(Array.isArray(med.evidence) && med.evidence.length>0,'Every medication needs at least one evidence span.');
+  const source=chars(doc.text);
+  for(const span of med.evidence){
+   requireCondition(span && Object.keys(span).sort().join(',')==='end,start,text','Unexpected evidence fields.');
+   requireCondition(Number.isInteger(span.start)&&Number.isInteger(span.end)&&span.start>=0&&span.end>span.start&&span.end<=source.length,'Evidence offsets are out of range.');
+   requireCondition(source.slice(span.start,span.end).join('')===span.text,'Evidence does not match the source text.');
+  }
+  requireCondition(med.evidence.some(span=>span.text.includes(med.name)),'Evidence must include the medication name as written.');
+ }
+}
+function validateWorkspace(value){
+ requireCondition(value && value.format===seed.format && value.role==='development_pilot' && value.protocol_version==='1','This is not a compatible pilot workspace.');
+ requireCondition(Array.isArray(value.documents)&&value.documents.length===seed.documents.length,'Document membership changed.');
+ requireCondition(value.metadata && typeof value.metadata==='object' && !Array.isArray(value.metadata) && value.provenance,'Missing annotation metadata or provenance.');
+ const ids=new Set();
+ for(const doc of value.documents){
+  validateDocument(doc);const original=seed.documents.find(d=>d.id===doc.id);
+  requireCondition(original && original.text===doc.text && !ids.has(doc.id),'Source text or document IDs changed.');ids.add(doc.id);
+  requireCondition(JSON.stringify(value.provenance[doc.id])===JSON.stringify(seed.provenance[doc.id]),'Source provenance changed.');
+  const meta=value.metadata[doc.id]||{};
+  if(doc.annotation_status!=='unannotated')requireCondition(typeof meta.annotator==='string'&&meta.annotator.trim(),'Saved records require an annotator alias.');
+  if(doc.annotation_status==='reviewed'){
+   requireCondition(meta.review_confirmed===true,'Missing review confirmation.');
+   if(doc.medications.length===0)requireCondition(meta.negative_confirmed===true,'Empty reviewed results need explicit confirmation.');
+  }
+ }
+}
+function markDirty(){dirty=true;editing.annotation_status='draft';$('review').checked=false;$('stage').textContent='unsaved draft';updateBackup();}
+function updateBackup(){ $('backup').textContent=(dirty||backupDirty)?'Changes need export':'No unexported changes'; }
+function updateProgress(){
+ const reviewed=workspace.documents.filter(d=>d.annotation_status==='reviewed').length;
+ $('progress').textContent=reviewed+' / '+workspace.documents.length+' reviewed';
+ $('jump').replaceChildren();workspace.documents.forEach((d,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(i+1)+'. '+d.id+' · '+d.annotation_status;$('jump').append(o);});$('jump').value=index;
+}
+function loadDocument(i){
+ index=i;editing=clone(workspace.documents[i]);active=editing.medications.length?0:-1;selection=null;dirty=false;
+ const meta=workspace.metadata[editing.id]||{};
+ $('source').textContent=editing.text;$('docTitle').textContent=(i+1)+' / '+workspace.documents.length+' · '+editing.id;
+ const p=workspace.provenance[editing.id];$('docInfo').textContent=p.source+' · '+p.source_split+' · development only';
+ $('stage').textContent=editing.annotation_status;$('notes').value=meta.notes||'';if(meta.annotator)$('identity').value=meta.annotator;
+ $('review').checked=meta.review_confirmed===true;$('negative').checked=meta.negative_confirmed===true;
+ $('previous').disabled=i===0;$('next').disabled=i===workspace.documents.length-1;
+ renderRecords();updateProgress();updateBackup();
+}
+function navigate(i){if(i<0||i>=workspace.documents.length)return;if(dirty&&!confirm('Discard changes to this document? Save a draft first to keep them.')){$('jump').value=index;return;}loadDocument(i);}
+function renderRecords(){
+ $('recordlist').replaceChildren();
+ editing.medications.forEach((med,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+(med.name||'Unnamed');b.className=i===active?'active':'';b.onclick=()=>{active=i;renderRecords();};$('recordlist').append(b);});
+ const med=editing.medications[active];$('editor').classList.toggle('hidden',!med);$('empty').classList.toggle('hidden',!!editing.medications.length);
+ $('negative').disabled=!!editing.medications.length;if(editing.medications.length)$('negative').checked=false;
+ if(!med)return;
+ $('recordTitle').textContent='Record '+(active+1);
+ for(const key of fields)$ (key).value=med[key]||'';
+ $('status').value=med.status;
+ $('selection').textContent=selection?selection.text:'No passage selected.';
+ $('evidence').replaceChildren();
+ med.evidence.forEach((span,i)=>{const box=document.createElement('div');box.className='evidence';const b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{med.evidence.splice(i,1);markDirty();renderRecords();};const text=document.createElement('span');text.textContent='['+span.start+', '+span.end+') '+span.text;box.append(b,text);$('evidence').append(box);});
+}
+$('source').addEventListener('mouseup',captureSelection);$('source').addEventListener('keyup',captureSelection);
+function captureSelection(){
+ const s=window.getSelection();if(!s||s.rangeCount===0||s.isCollapsed)return;
+ const r=s.getRangeAt(0);if(!$('source').contains(r.startContainer)||!$('source').contains(r.endContainer))return;
+ const prefix=document.createRange();prefix.selectNodeContents($('source'));prefix.setEnd(r.startContainer,r.startOffset);
+ const end=document.createRange();end.selectNodeContents($('source'));end.setEnd(r.endContainer,r.endOffset);
+ const start=chars(prefix.toString()).length, finish=chars(end.toString()).length;
+ selection={start,end:finish,text:chars(editing.text).slice(start,finish).join('')};
+ $('selection').textContent=selection.text;
+}
+for(const key of fields)$(key).addEventListener('input',()=>{const med=editing.medications[active];if(!med)return;med[key]=key==='name'?$(key).value:($(key).value.trim()?$(key).value:null);markDirty();});
+$('status').onchange=()=>{editing.medications[active].status=$('status').value;markDirty();};
+$('identity').oninput=markDirty;$('notes').oninput=markDirty;
+$('add').onclick=()=>{editing.medications.push({name:'',strength:null,dose:null,route:null,frequency:null,status:'unknown',evidence:[]});active=editing.medications.length-1;markDirty();renderRecords();};
+$('attach').onclick=()=>{if(!selection){message('Select a source passage first.',true);return;}const med=editing.medications[active];if(!med)return;if(!med.evidence.some(s=>s.start===selection.start&&s.end===selection.end)){med.evidence.push(clone(selection));markDirty();renderRecords();}};
+$('useName').onclick=()=>{if(!selection){message('Select the medication name in the source first.',true);return;}editing.medications[active].name=selection.text;markDirty();renderRecords();};
+$('remove').onclick=()=>{if(!confirm('Remove this medication record?'))return;editing.medications.splice(active,1);active=editing.medications.length?Math.min(active,editing.medications.length-1):-1;markDirty();renderRecords();};
+function save(stage){
+ try{
+  const doc=clone(editing);doc.annotation_status=stage;validateDocument(doc);
+  const alias=$('identity').value.trim();requireCondition(alias,'Enter an annotator alias.');
+  if(stage==='reviewed'){requireCondition($('review').checked,'Confirm that you checked the entire source and all records.');if(!doc.medications.length)requireCondition($('negative').checked,'Confirm the empty medication result.');}
+  workspace.documents[index]=doc;workspace.metadata[doc.id]={annotator:alias,notes:$('notes').value,updated_at:new Date().toISOString(),protocol_version:'1',review_confirmed:stage==='reviewed',negative_confirmed:stage==='reviewed'&&!doc.medications.length&&$('negative').checked};
+  editing=clone(doc);dirty=false;backupDirty=true;$('stage').textContent=stage;updateProgress();updateBackup();message('Saved '+stage+' in this tab. Export a workspace backup to keep it.');return true;
+ }catch(error){message(error.message,true);return false;}
+}
+$('saveDraft').onclick=()=>save('draft');$('saveReviewed').onclick=()=>save('reviewed');
+$('previous').onclick=()=>navigate(index-1);$('next').onclick=()=>navigate(index+1);$('jump').onchange=()=>navigate(Number($('jump').value));
+function download(name,text,type){const blob=new Blob([text],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('export').onclick=()=>{try{if(dirty){message('Save the current document as a draft or reviewed record before exporting.',true);return;}validateWorkspace(workspace);download('medication-pilot-workspace-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json',JSON.stringify(workspace,null,2)+'\n','application/json');backupDirty=false;updateBackup();message('Backup download requested. Check that the file was saved before closing this tab.');}catch(error){message(error.message,true);}};
+$('exportReviewed').onclick=()=>{try{requireCondition(!dirty,'Save the current document before exporting.');validateWorkspace(workspace);const docs=workspace.documents.filter(d=>d.annotation_status==='reviewed');requireCondition(docs.length>0,'No reviewed records yet.');download('medication-pilot-reviewed.jsonl',docs.map(d=>JSON.stringify(d)).join('\n')+'\n','application/x-ndjson');message('Reviewed records downloaded. Also export a workspace backup to retain notes and provenance.');}catch(error){message(error.message,true);}};
+$('import').onchange=async event=>{try{const file=event.target.files[0];if(!file)return;const value=JSON.parse(await file.text());validateWorkspace(value);if((dirty||backupDirty)&&!confirm('Replace this tab’s annotations? Export a backup first to preserve them.'))return;workspace=clone(value);backupDirty=false;loadDocument(0);message('Workspace imported. Source membership and evidence offsets validated.');}catch(error){message('Import failed: '+error.message,true);}finally{event.target.value='';}};
+window.addEventListener('beforeunload',event=>{if(dirty||backupDirty){event.preventDefault();event.returnValue='';}});
+validateWorkspace(workspace);loadDocument(0);
+</script></body></html>

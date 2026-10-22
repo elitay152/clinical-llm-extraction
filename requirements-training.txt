@@ -1,0 +1,4 @@
+# Install CPU torch separately; see docs/training.md.
+transformers==4.51.3
+peft==0.15.2
+accelerate==1.6.0
