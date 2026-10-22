@@ -1,7 +1,7 @@
 # Distillation workflow
 
 Follow the [quick start](../README.md#quick-start) for installation and credentials.
-The student initializes from the pinned SmolLM2-135M-Instruct base checkpoint. Evaluation definitions and limitations are in [experiment design](experiment.md).
+The student checkpoint is pinned in `configs/student.json`. Evaluation definitions and limitations are in [experiment design](experiment.md).
 
 ## Inputs and labeling
 

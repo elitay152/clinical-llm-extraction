@@ -38,6 +38,25 @@ be withheld from training. Otherwise negative_evidence must be empty. Do not out
 character offsets, Markdown, explanations, or additional fields.'''
 
 
+def load_manifest(directory):
+    path = directory / 'manifest.json'
+    manifest = json.loads(path.read_text())
+    seal = directory / 'manifest.sha256'
+    if manifest.get('protocol') == 'frozen-three-way-v1' and not seal.exists():
+        raise ValueError('Frozen experiment is missing its manifest checksum')
+    if seal.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != seal.read_text().strip():
+        raise ValueError('Frozen manifest changed')
+    groups = {}
+    for row in manifest['candidates']:
+        if hashlib.sha256(row['text'].encode()).hexdigest() != row['input_sha256']:
+            raise ValueError('Manifest input hash mismatch')
+        group = row['source_group']
+        if group in groups and groups[group] != row['split']:
+            raise ValueError('Source group crosses split boundaries')
+        groups[group] = row['split']
+    return manifest
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n')
@@ -197,9 +216,11 @@ def local_generator(model_name, revision, max_tokens):
 def label(directory, model, base_url, backend, revision, limit, max_tokens, split=None):
     if limit < 1 or max_tokens < 1 or not model.strip():
         raise ValueError('Model, positive limit and positive max_tokens are required')
-    manifest = json.loads((directory / 'manifest.json').read_text())
+    manifest = load_manifest(directory)
     if manifest['system_prompt'] != SYSTEM or manifest['prompt_version'] != PROMPT_VERSION:
         raise ValueError('Prompt changed; prepare a new run')
+    if manifest.get('test_locked') and split not in ('train', 'development'):
+        raise ValueError('Test set is locked; explicitly select train or development')
     path = directory / 'responses.jsonl'
     config = {'model': model, 'backend': backend, 'base_url': base_url if backend == 'hosted' else None,
               'revision': revision, 'max_tokens': max_tokens, 'prompt_version': PROMPT_VERSION,
@@ -231,7 +252,7 @@ def label(directory, model, base_url, backend, revision, limit, max_tokens, spli
 
 
 def collect(directory):
-    manifest = json.loads((directory / 'manifest.json').read_text())
+    manifest = load_manifest(directory)
     candidates = {c['id']: c for c in manifest['candidates']}
     if len(candidates) != len(manifest['candidates']):
         raise ValueError('Duplicate candidate IDs')
@@ -248,13 +269,15 @@ def collect(directory):
         seen.add(identifier)
         if identifier not in candidates or record['input_sha256'] != candidates[identifier]['input_sha256']:
             raise ValueError('Response does not match frozen input manifest')
+        if manifest.get('test_locked') and candidates[identifier]['split'] == 'test':
+            raise ValueError('Locked test response found; refusing collection')
         try:
             value = validate_teacher_response(candidates[identifier], record['response'])
             value['teacher'] = record['teacher']
             accepted.append(value)
         except (ValueError, TypeError, KeyError) as error:
             rejected.append({'id': identifier, 'reason': str(error)})
-    for split in ('train', 'validation'):
+    for split in ('train', 'development', 'test') if manifest.get('test_locked') else ('train', 'validation'):
         with (directory / f'{split}.jsonl').open('w') as output:
             for value in accepted:
                 if value['split'] == split:
@@ -277,7 +300,7 @@ def main():
     p = sub.add_parser('label'); p.add_argument('directory', type=Path)
     p.add_argument('--backend', choices=['hosted', 'local'], required=True)
     p.add_argument('--model', required=True); p.add_argument('--revision')
-    p.add_argument('--split', choices=['train', 'validation'])
+    p.add_argument('--split', choices=['train', 'validation', 'development'])
     p.add_argument('--base-url', default=os.environ.get('TEACHER_API_BASE_URL', ''))
     p.add_argument('--limit', type=int, default=3); p.add_argument('--max-tokens', type=int, default=1200)
     p = sub.add_parser('collect'); p.add_argument('directory', type=Path)

@@ -22,6 +22,8 @@ def run(silver, output, comparison, model, base_url, steps):
     path = silver / 'responses.jsonl'
     records = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
     manifest = json.loads((silver / 'manifest.json').read_text())
+    if manifest.get('test_locked'):
+        raise ValueError('Frozen experiments require explicit train/development labeling, not the pilot runner')
     split_by_id = {c['id']: c['split'] for c in manifest['candidates']}
     for split, total in [('train', 3), ('validation', 1)]:
         done = sum(split_by_id.get(record['id']) == split for record in records)

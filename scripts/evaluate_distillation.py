@@ -1,6 +1,7 @@
 """Compare baseline/adapted student agreement with held-out teacher labels."""
 import argparse
 import collections
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,15 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.pseudo_label import validate_teacher_response, SYSTEM
+from scripts.pseudo_label import validate_teacher_response
 from scripts.train_distillation import read_splits
+
+
+def saved_prompt(report):
+    prompt = report['system_prompt']
+    if report.get('prompt_sha256') and hashlib.sha256(prompt.encode()).hexdigest() != report['prompt_sha256']:
+        raise ValueError('Training prompt checksum mismatch')
+    return prompt
 
 
 def record_key(record):
@@ -66,12 +74,12 @@ def main():
     report = json.loads((args.run / 'run.json').read_text())
     silver = Path(report['silver_directory'])
     _, references = read_splits(silver)
+    reference_split = 'development' if (silver / 'development.jsonl').exists() else 'validation'
     if not references:
-        raise ValueError('No accepted validation teacher labels; label and collect validation first')
+        raise ValueError('No accepted development/validation teacher labels')
     if set(report['source_groups']) & {r['source_group'] for r in references}:
         raise ValueError('Evaluation source groups overlap trained examples')
-    if report['system_prompt'] != SYSTEM:
-        raise ValueError('Prompt differs from the training run')
+    system_prompt = saved_prompt(report)
     os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -79,12 +87,13 @@ def main():
     torch.set_num_threads(report['threads'])
     tokenizer = AutoTokenizer.from_pretrained(args.run, local_files_only=True)
     model = AutoModelForCausalLM.from_pretrained(report['model'], revision=report['revision'],
-                                                torch_dtype=torch.float32, local_files_only=True)
+                                                torch_dtype=torch.float32, local_files_only=True,
+                                                attn_implementation=report.get('attention_implementation', 'sdpa'))
     args.output.mkdir(parents=True, exist_ok=False)
     def predict(model):
         model.eval(); predictions = []
         for ref in references:
-            prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': SYSTEM},
+            prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': system_prompt},
                      {'role': 'user', 'content': ref['text']}], tokenize=False, add_generation_prompt=True)
             tokens = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             if tokens['input_ids'].shape[1] + args.max_tokens > model.config.max_position_embeddings:
@@ -103,8 +112,8 @@ def main():
     adapted = predict(model)
     (args.output / 'adapted.json').write_text(json.dumps(adapted, indent=2) + '\n')
     result = {'baseline': score(references, baseline), 'adapted': score(references, adapted),
-              'reference_origin': 'teacher_generated', 'model': report['model'], 'revision': report['revision'],
-              'validation_ids': [r['id'] for r in references], 'max_tokens': args.max_tokens,
+              'reference_origin': 'teacher_generated', 'reference_split': reference_split, 'model': report['model'], 'revision': report['revision'],
+              'reference_ids': [r['id'] for r in references], 'max_tokens': args.max_tokens,
               'decoding': 'greedy', 'device': 'cpu', 'threads': report['threads'],
               'limitations': ['Very small silver-reference comparison; no clinical gold labels.',
                               'Exact-text grouping only; article/patient overlap remains unresolved.',

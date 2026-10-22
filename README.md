@@ -31,6 +31,10 @@ Network access is needed to `huggingface.co`, `*.huggingface.co`, `*.hf.co`,
 Data, credentials, labels, predictions, and weights stay outside Git. Review
 upstream data terms before redistribution.
 
+For a frozen train/development/test experiment, use the
+[split and labeling workflow](docs/experiment.md). The student checkpoint and
+prompt are configured in `configs/student.json` and `configs/student-prompt.txt`.
+
 ## Tests
 
 Unit tests need only Python and make no network or model API calls:
