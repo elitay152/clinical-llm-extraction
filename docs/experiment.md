@@ -14,7 +14,7 @@ Invalid responses count as empty predictions and receive no exact-document
 credit. All-empty record comparisons have undefined F1; zero-reference runs fail.
 Generation timings include first-use overhead and are not production benchmarks.
 
-## Interpretation and next steps
+## Interpretation
 
 - Teacher agreement is not clinical accuracy. Exact evidence matches cannot prove
   completeness, temporal reasoning, medication–attribute linking, or correctness.
@@ -24,7 +24,5 @@ Generation timings include first-use overhead and are not production benchmarks.
 - Independent clinical evaluation would require separately reviewed labels,
   medication-linked field scores, negative cases, and negation/status error slices.
   Keep evaluation labels out of training, prompt selection, and demonstrations.
-- An encoder baseline remains future work: generated summaries lack token spans
-  and require audited alignment for token classification and attribute linking.
 - Report MTS-Dialog transfer results separately from clinical-note results.
   Resolve upstream data and model terms before releasing data or trained weights.

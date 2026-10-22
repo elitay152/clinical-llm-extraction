@@ -1,8 +1,7 @@
 # Distillation workflow
 
 Follow the [quick start](../README.md#quick-start) for installation and credentials.
-The student starts from the pinned SmolLM2-135M-Instruct base checkpoint, not the
-earlier treatment-name adapter. Evaluation definitions and limitations are in [experiment design](experiment.md).
+The student initializes from the pinned SmolLM2-135M-Instruct base checkpoint. Evaluation definitions and limitations are in [experiment design](experiment.md).
 
 ## Inputs and labeling
 
@@ -25,7 +24,7 @@ python scripts/pseudo_label.py collect data/silver/my-pilot
 ```
 
 The runner caps each pilot at three training and one validation response,
-including prior attempts. Labeling preserves raw responses and skips completed
+across resumed calls. Labeling preserves raw responses and skips completed
 IDs. Changing the teacher, prompt, or generation settings requires a new run.
 Rejections do not trigger replacement API calls.
 
@@ -58,4 +57,4 @@ Hosted providers must support HTTPS `/chat/completions`, temperature 0,
 `max_tokens`, and JSON-object response mode. Configure the model, API base,
 credential, and allowed destination for your provider. The labeling command also
 supports `--backend local --model MODEL --revision EXACT_REVISION`; local inference
-requires downloading that model and currently uses CPU float32.
+requires downloading that model and uses CPU float32.

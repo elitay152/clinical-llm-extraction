@@ -83,7 +83,7 @@ def main():
     args = parser.parse_args()
     if args.steps < 1:
         parser.error('--steps must be positive')
-    args.output.mkdir(parents=True, exist_ok=False)  # Never overwrite an earlier adapter.
+    args.output.mkdir(parents=True, exist_ok=False)
     set_seed(42)
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     tokenizer = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)

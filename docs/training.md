@@ -1,8 +1,8 @@
-# Earlier treatment-name pilot
+# Treatment-name training
 
-This CPU smoke test extracts source-supported treatment names from generated
-summaries. Treatments include non-drug therapies; dose, route, frequency, status,
-and evidence prediction are covered by the later [distillation workflow](distillation.md).
+This CPU workflow extracts source-supported treatment names from generated
+summaries, including non-drug therapies. Use the [distillation workflow](distillation.md)
+for medication attributes, status, and evidence prediction.
 
 After the [quick start](../README.md#quick-start) installation and data preparation:
 

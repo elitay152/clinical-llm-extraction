@@ -6,7 +6,7 @@ medication name, strength, dose, route, frequency, status, and source evidence.
 
 ## Quick start
 
-Python 3.11+; training currently uses CPU float32. From the repository root:
+Python 3.11+; training uses CPU float32. From the repository root:
 
 ```bash
 python -m venv .venv
@@ -44,4 +44,4 @@ python -m unittest discover -s tests -v
 - [Distillation workflow](docs/distillation.md) and [experiment design](docs/experiment.md)
 - [Medication schema](schemas/medications.schema.json) and [annotation protocol](docs/annotation.md)
 - [Optional offline annotation tool](docs/annotation-tool.md)
-- [Earlier treatment-name pilot](docs/training.md)
+- [Treatment-name training](docs/training.md)

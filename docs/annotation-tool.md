@@ -33,8 +33,8 @@ This selected, mixed-domain pilot is development data; report the domains separa
 Literal escaped paragraph separators and CRLF are normalized to newlines before
 annotation. Offsets refer to this normalized text, which must also be used for
 model inputs. Provenance retains raw/normalized hashes; original source files
-remain unchanged. Exact clinical-note hashes were excluded from the training
-pool; broader isolation limits are described in [experiment design](experiment.md).
+are preserved. Training excludes reserved clinical-note hashes; broader isolation
+limits are described in [experiment design](experiment.md).
 
 Validate an exported backup against the frozen source:
 

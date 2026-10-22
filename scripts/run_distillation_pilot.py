@@ -18,7 +18,7 @@ def run(silver, output, comparison, model, base_url, steps):
         raise ValueError('Training/comparison output exists; choose new output paths before making API calls')
     if not (silver / 'manifest.json').exists():
         prepare(silver, limit=12, max_chars=1800, window='dosage')
-    # Limits are total responses per split, including prior interrupted runs.
+    # Resumed calls count toward the per-split request limits.
     path = silver / 'responses.jsonl'
     records = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
     manifest = json.loads((silver / 'manifest.json').read_text())
