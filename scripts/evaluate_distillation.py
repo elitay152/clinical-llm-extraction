@@ -14,7 +14,7 @@ from scripts.train_distillation import read_splits
 
 
 def record_key(record):
-    # Evidence alignment is checked separately. Exact regimen/attribute agreement.
+    # Evidence positions are validated but excluded from record equality.
     return json.dumps({key: record[key] for key in ('name', 'strength', 'dose', 'route', 'frequency', 'status')}, sort_keys=True)
 
 

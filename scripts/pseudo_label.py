@@ -1,4 +1,4 @@
-"""Prepare, generate, and validate silver medication labels (never human gold)."""
+"""Prepare, generate, and validate teacher-generated medication labels."""
 import argparse
 import collections
 import hashlib
@@ -50,7 +50,6 @@ def select_excerpt(full_text, max_chars, window):
         if not match:
             return None
         start = max(0, match.start() - 500)
-        # Begin at a nearby sentence boundary when possible, preserving offsets.
         boundary = max(full_text.rfind('. ', 0, start), full_text.rfind('\n', 0, start))
         if boundary >= 0 and start - boundary < 300:
             start = boundary + (2 if full_text[boundary:boundary+2] == '. ' else 1)
@@ -87,7 +86,6 @@ def prepare(directory, limit, max_chars, window='prefix'):
             break
     if len(candidates) < 2:
         raise ValueError('Insufficient candidates after reservation/deduplication')
-    # All excerpts from the same normalized full text receive the same split.
     groups = sorted({c['source_group'] for c in candidates})
     heldout = set(groups[:max(1, len(groups) // 5)])
     for row in candidates:

@@ -35,12 +35,4 @@ exhaustive medication labels. Review every selected dialogue, including sections
 other than MEDICATIONS. Preserve official split membership. Do not use its test
 examples for prompt tuning or demonstrations.
 
-For Augmented Clinical Notes, labels are generated silver labels, not human gold.
-Audit the source scope (`note` versus `full_note`) before choosing model inputs.
-The preparation script exports full notes as annotation candidates, without
-copying generated summaries into annotation files. Sampling the first N rows is
-an engineering smoke check, not a representative benchmark.
-
-The first-pass browser workflow and 20-document development pilot are described
-in [annotation-tool.md](annotation-tool.md). Review stage is self-declared;
-independent adjudication and headline test construction are separate future steps.
+Use the [offline tool](annotation-tool.md) for first-pass development annotation.

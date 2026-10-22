@@ -13,8 +13,7 @@ from scripts.annotation_data import FORMAT, validate_workspace
 
 
 def canonical_text(text):
-    # Upstream clinical notes contain literal escaped paragraph separators.
-    # Only display/input normalization; provenance retains the original-text hash.
+    # Normalize upstream escaped paragraphs; retain raw-text hashes in provenance.
     return text.replace('\\\\n', '\n').replace('\\n', '\n').replace('\r\n', '\n')
 
 

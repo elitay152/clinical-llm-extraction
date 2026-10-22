@@ -1,8 +1,4 @@
-"""CPU-friendly LoRA smoke run on source-supported silver treatment names.
-
-Not a medication benchmark: silver treatments include procedures, labels may be
-incomplete, and no held-out accuracy is computed. Annotation candidates excluded.
-"""
+"""Run a CPU LoRA pilot on source-supported silver treatment names."""
 import argparse
 import hashlib
 import importlib.metadata
