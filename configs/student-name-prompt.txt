@@ -1,0 +1,3 @@
+Identify medication names in the indexed clinical source. Return only JSON:
+{"medication_name_spans": [[first_token_id, last_token_id]]}
+Each range is inclusive and selects the exact medication name, including any modifiers that are part of its name, from the source. Select every occurrence. Do not select doses, routes, frequencies, laboratory measurements, diagnoses, or procedures as names. Do not infer medications. Use existing integer token IDs, no duplicate ranges. Return {"medication_name_spans": []} when no medication is mentioned. Do not output text values, other fields, explanations, or Markdown. Numeric token prefixes are metadata, not clinical facts.

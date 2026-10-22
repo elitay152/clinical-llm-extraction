@@ -50,8 +50,11 @@ The student is pinned in `configs/student.json`; its prompt file and evidence mo
 ## Evaluation
 
 Both checkpoints use the saved training prompt and greedy decoding. Report JSON
-validity, schema/evidence validity, exact-document agreement, and medication-record
-precision/recall/F1 against teacher references. Record equality is case-sensitive
+validity, schema/span validity, and exact-document agreement. The default
+name-span task reports exact source-span and unique name-text precision/recall/F1
+against teacher references; it does not evaluate attributes or status.
+
+Full-schema modes report medication-record precision/recall/F1. Record equality is case-sensitive
 and includes name, strength, dose, route, frequency, and status, retaining
 multiplicity. Evidence IDs are resolved to source spans and validated separately from record equality.
 Invalid responses count as empty predictions and receive no exact-document

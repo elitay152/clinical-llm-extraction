@@ -35,9 +35,32 @@ computes Unicode offsets. Empty outputs require quoted denial evidence.
 Accepted records retain `teacher_generated` provenance; rejected responses and
 reasons remain available for inspection.
 
+## Medication-name spans
+
+The default `name_spans` task uses `configs/student-name-prompt.txt`. The student
+receives indexed source tokens and returns `medication_name_spans`: inclusive
+`[first_token_id, last_token_id]` ranges. Code copies the original text between
+those token boundaries, preserving Unicode offsets and whitespace. Unknown,
+reversed, duplicate, and non-integer ranges are rejected. An empty array means
+no medication names were selected; no attributes or status are predicted.
+
+Targets include exact, token-aligned occurrences of teacher medication names
+inside their supporting evidence. Identical spans are deduplicated across
+medication records. Unalignable training rows are excluded and recorded in the
+local run metadata; unalignable development references fail evaluation.
+`synthetic_lab_negatives` adds eight fixed lab-only denial examples to training,
+with separate synthetic provenance. They never enter development metrics. Source
+indexing guarantees copied text, not that a selected term is a medication.
+
+Evaluation reports exact name-span precision/recall/F1, unique case-sensitive
+name-text precision/recall/F1 per document, JSON/range validity, and exact-document
+agreement. These metrics evaluate a narrower task than full medication records.
+Teacher evidence may omit repeated mentions, so span recall is agreement with
+the attested reference occurrences, not a completeness measure.
+
 ## Sentence-ID evidence
 
-The student receives numbered source sentences and returns integer
+With `evidence_mode: sentence_ids`, the student receives numbered source sentences and returns integer
 `evidence_sentence_ids` for each medication, plus `negative_evidence_sentence_ids`
 for an explicit denial. Code resolves IDs to exact text and Unicode offsets;
 unknown, duplicate, or non-integer IDs are rejected. Medication names and populated

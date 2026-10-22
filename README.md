@@ -6,7 +6,7 @@ medication name, strength, dose, route, frequency, status, and source evidence.
 
 ## Quick start
 
-Python 3.11+; training uses CPU float32. From the repository root:
+Python 3.11+; training uses CPU with precision configured in `configs/student.json`. From the repository root:
 
 ```bash
 python -m venv .venv
@@ -33,8 +33,8 @@ upstream data terms before redistribution.
 
 For a frozen train/development/test experiment, use the
 [split and labeling workflow](docs/experiment.md). The student checkpoint and
-prompt are configured in `configs/student.json`. The student selects source
-sentence IDs; code retrieves the evidence text and offsets.
+prompt are configured in `configs/student.json`. The default student selects
+medication-name token ranges; code retrieves exact source text and offsets.
 
 ## Tests
 

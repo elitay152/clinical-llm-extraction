@@ -2,7 +2,10 @@
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "license": "Apache-2.0",
-  "max_length": 2048,
-  "prompt_file": "student-sentence-prompt.txt",
-  "evidence_mode": "sentence_ids"
+  "max_length": 2560,
+  "prompt_file": "student-name-prompt.txt",
+  "evidence_mode": "name_spans",
+  "attention_implementation": "sdpa",
+  "torch_dtype": "bfloat16",
+  "synthetic_lab_negatives": true
 }

@@ -11,6 +11,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from scripts import name_spans
 from scripts.pseudo_label import SYSTEM
 from scripts.sentence_evidence import MODE, VERSION, render_source, sentence_payload, resolve_response
 
@@ -21,12 +22,14 @@ def response_payload(record):
 
 
 def encode_record(record, tokenizer, max_length, system_prompt=SYSTEM, evidence_mode='quotes'):
-    if record['label_origin'] != 'teacher_generated' or record['split'] != 'train':
-        raise ValueError('Training accepts teacher-generated training rows only')
+    synthetic = evidence_mode == name_spans.MODE and record in name_spans.synthetic_negatives()
+    if (record['label_origin'] != 'teacher_generated' and not synthetic) or record['split'] != 'train':
+        raise ValueError('Training accepts teacher-generated rows or approved synthetic training rows only')
     prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': system_prompt},
-             {'role': 'user', 'content': render_source(record['text'], evidence_mode)}], tokenize=False, add_generation_prompt=True)
+             {'role': 'user', 'content': name_spans.render_source(record['text']) if evidence_mode == name_spans.MODE else render_source(record['text'], evidence_mode)}], tokenize=False, add_generation_prompt=True)
     prompt_ids = tokenizer(prompt, add_special_tokens=False)['input_ids']
-    payload = sentence_payload(record) if evidence_mode == MODE else response_payload(record)
+    payload = (name_spans.reference_payload(record) if evidence_mode == name_spans.MODE else
+               sentence_payload(record) if evidence_mode == MODE else response_payload(record))
     if evidence_mode == MODE:
         resolve_response(record, json.dumps(payload))
     answer_ids = tokenizer(json.dumps(payload, ensure_ascii=False) + tokenizer.eos_token,
@@ -103,10 +106,27 @@ def main():
     set_seed(42)
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
-    examples = [e for r in train if (e := encode_record(r, tokenizer, args.max_length, student_prompt, config.get('evidence_mode', 'quotes'))) is not None]
-    if len(examples) < 2:
-        raise ValueError('Too few examples fit context. No targets were truncated.')
-    model = AutoModelForCausalLM.from_pretrained(model_name, revision=revision, torch_dtype=torch.float32, attn_implementation='eager')
+    skipped_unaligned = []
+    if config.get('evidence_mode') == name_spans.MODE:
+        aligned = []
+        for record in train:
+            try:
+                name_spans.reference_payload(record)
+            except ValueError as error:
+                skipped_unaligned.append({'id': record['id'], 'reason': str(error)})
+            else:
+                aligned.append(record)
+        training_rows = aligned + (name_spans.synthetic_negatives() if config.get('synthetic_lab_negatives') else [])
+    else:
+        training_rows = train
+    examples = [e for r in training_rows if (e := encode_record(r, tokenizer, args.max_length, student_prompt, config.get('evidence_mode', 'quotes'))) is not None]
+    teacher_ids = {record['id'] for record in train}
+    if sum(example['id'] in teacher_ids for example in examples) < 2:
+        raise ValueError('Need two aligned teacher training examples that fit context; targets are not truncated.')
+    dtype_name = config.get('torch_dtype', 'float32')
+    if dtype_name not in ('float32', 'bfloat16'):
+        raise ValueError('Unsupported training precision')
+    model = AutoModelForCausalLM.from_pretrained(model_name, revision=revision, torch_dtype=getattr(torch, dtype_name), attn_implementation=config.get('attention_implementation', 'eager'))
     model = get_peft_model(model, LoraConfig(r=8, lora_alpha=16, lora_dropout=0.05,
                                            target_modules=['q_proj', 'v_proj'], task_type='CAUSAL_LM'))
     optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=2e-4)
@@ -135,12 +155,14 @@ def main():
               'train_file_sha256': hashlib.sha256((args.silver_directory / 'train.jsonl').read_bytes()).hexdigest(),
               'training_ids': [e['id'] for e in examples], 'source_groups': [e['source_group'] for e in examples],
               'evidence_mode': config.get('evidence_mode', 'quotes'), 'sentence_version': VERSION if config.get('evidence_mode') == MODE else None,
+              'token_version': name_spans.VERSION if config.get('evidence_mode') == name_spans.MODE else None,
               'max_length': args.max_length, 'steps': args.steps, 'seed': 42, 'learning_rate': 2e-4,
-              'batch_size': 1, 'device': 'cpu', 'attention_implementation': 'eager', 'threads': torch.get_num_threads(),
+              'batch_size': 1, 'device': 'cpu', 'torch_dtype': dtype_name, 'attention_implementation': config.get('attention_implementation', 'eager'), 'threads': torch.get_num_threads(),
               'lora': {'r': 8, 'alpha': 16, 'dropout': 0.05, 'target_modules': ['q_proj', 'v_proj']},
               'trainable_parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
-              'accepted_train_rows': len(train), 'encoded_train_rows': len(examples),
-              'skipped_overlength_rows': len(train) - len(examples), 'validation_rows': len(validation), 'student_config': config,
+              'accepted_train_rows': len(train), 'synthetic_train_rows': sum(r['label_origin'] == 'synthetic' for r in training_rows), 'encoded_train_rows': len(examples),
+              'skipped_unaligned_rows': skipped_unaligned,
+              'skipped_overlength_rows': len(training_rows) - len(examples), 'validation_rows': len(validation), 'student_config': config,
               'losses': losses, 'training_probe_loss_before': before, 'training_probe_loss_after': after,
               'elapsed_seconds': time.monotonic() - started,
               'packages': {p: importlib.metadata.version(p) for p in ('torch', 'transformers', 'peft', 'accelerate')},
