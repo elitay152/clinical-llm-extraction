@@ -1,0 +1,6 @@
+[project]
+name = "clinical-llm-extraction"
+version = "0.1.0"
+description = "Evidence-grounded medication extraction experiments"
+requires-python = ">=3.11"
+dependencies = []

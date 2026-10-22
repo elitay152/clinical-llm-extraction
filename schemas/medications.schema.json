@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Medication extraction annotation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "text", "medications", "annotation_status"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "text": {"type": "string"},
+    "annotation_status": {"enum": ["unannotated", "draft", "reviewed", "adjudicated"]},
+    "medications": {"type": "array", "items": {"$ref": "#/$defs/medication"}}
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "span": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start", "end", "text"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1},
+        "text": {"type": "string", "minLength": 1}
+      }
+    },
+    "medication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "strength", "dose", "route", "frequency", "status", "evidence"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "strength": {"$ref": "#/$defs/nullableString"},
+        "dose": {"$ref": "#/$defs/nullableString"},
+        "route": {"$ref": "#/$defs/nullableString"},
+        "frequency": {"$ref": "#/$defs/nullableString"},
+        "status": {"enum": ["current", "discontinued", "historical", "hypothetical", "unknown"]},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/span"}}
+      }
+    }
+  }
+}
