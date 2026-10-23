@@ -3,9 +3,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import re
 
 from scripts import name_spans
-from scripts.label_medication_names import validate_response, prepare, checked_manifest, label
+from scripts.label_medication_names import validate_response, prepare, checked_manifest, label, collect
 from scripts.train_distillation import read_splits
 
 
@@ -62,6 +64,29 @@ class NameLabelingTests(unittest.TestCase):
         with self.assertRaises(ValueError):name_spans.reference_payload(record)
         with self.assertRaises(ValueError):
             validate_response(candidate(text),answer([('sodium chloride',text),('chloride',text)]))
+
+    def test_fresh_frozen_splits_can_label_names_without_a_classifier(self):
+        from tests.test_experiment_splits import manifest, save
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'source';source.mkdir();value=manifest();save(source,value)
+            output=root/'names';result=prepare(source,None,output)
+            self.assertEqual(result['splits'],{'train':6,'development':2})
+            revised,_=checked_manifest(output)
+            self.assertIsNone(revised['source_classifier_run_sha256'])
+            self.assertEqual(read_splits(source),([],[]))
+            def generate(record,*args,**kwargs):
+                name=re.search(r'drug\d+',record['text']).group()
+                return answer([(name,record['text'])]),{'model':'fixture'}
+            with patch('scripts.label_medication_names.hosted_response',side_effect=generate) as call:
+                label(output,'train','fixture','https://example.test',100,100)
+                label(output,'development','fixture','https://example.test',100,100)
+                self.assertEqual(call.call_count,8)
+                label(output,'train','fixture','https://example.test',100,100)
+                self.assertEqual(call.call_count,8)
+            self.assertEqual(collect(output)['accepted'],8)
+            train,dev=read_splits(output)
+            self.assertEqual((len(train),len(dev)),(6,2))
+            self.assertEqual((output/'test.jsonl').read_text(),'')
 
     def test_prepare_preserves_membership_and_never_selects_test(self):
         with tempfile.TemporaryDirectory() as directory:

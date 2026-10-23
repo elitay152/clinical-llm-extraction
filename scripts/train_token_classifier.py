@@ -32,6 +32,7 @@ def main():
         raise ValueError('Epochs and batch size must be positive')
     if config['compute_dtype'] not in ('float32', 'bfloat16'):
         raise ValueError('Unsupported compute precision')
+    training_digest = hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest()
     train, development = read_splits(args.silver_directory)
     if any(r['label_origin'] != 'teacher_generated' for r in train):
         raise ValueError('Expected teacher-generated training references')
@@ -89,12 +90,14 @@ def main():
             losses.append(loss.item()); current_losses.append(loss.item())
             print(json.dumps({'epoch': epoch+1, 'step': len(losses), 'loss': loss.item()}), flush=True)
         epoch_losses.append(sum(current_losses)/len(current_losses))
+    if hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest() != training_digest:
+        raise ValueError('Training labels changed during training')
     args.output.mkdir(parents=True, exist_ok=False)
     model.save_pretrained(args.output); tokenizer.save_pretrained(args.output)
     report = {'task': 'medication-name token classification', 'alignment_version': token_classifier.VERSION,
               'source_token_version': name_spans.VERSION, 'config': config,
               'silver_directory': str(args.silver_directory.resolve()),
-              'train_file_sha256': hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest(),
+              'train_file_sha256': training_digest,
               'training_ids': [r['id'] for r in rows], 'source_groups': [r['source_group'] for r in rows],
               'teacher_training_rows': len(rows)-len(synthetic), 'synthetic_training_rows': len(synthetic),
               'synthetic_training_inputs': [{'id': r['id'], 'input_sha256': r['input_sha256']} for r in synthetic],

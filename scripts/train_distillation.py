@@ -94,6 +94,7 @@ def main():
         raise ValueError('Student revision must be an exact commit SHA')
     args.max_length = args.max_length or config['max_length']
     student_prompt = (args.student_config.parent / config['prompt_file']).read_text() if config.get('prompt_file') else SYSTEM
+    training_digest = hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest()
     train, validation = read_splits(args.silver_directory)
     if len(train) < 2:
         raise ValueError('Need at least two accepted training labels; run labeling and collect first')
@@ -148,11 +149,13 @@ def main():
     model.eval()
     with torch.no_grad():
         after = model(**batch(examples[0])).loss.item()
+    if hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest() != training_digest:
+        raise ValueError('Training labels changed during training')
     args.output.mkdir(parents=True, exist_ok=False)
     model.save_pretrained(args.output); tokenizer.save_pretrained(args.output)
     report = {'task': 'medication schema distillation from silver labels', 'model': model_name, 'revision': revision,
               'silver_directory': str(args.silver_directory.resolve()), 'system_prompt': student_prompt, 'prompt_sha256': hashlib.sha256(student_prompt.encode()).hexdigest(),
-              'train_file_sha256': hashlib.sha256((args.silver_directory / 'train.jsonl').read_bytes()).hexdigest(),
+              'train_file_sha256': training_digest,
               'training_ids': [e['id'] for e in examples], 'source_groups': [e['source_group'] for e in examples],
               'evidence_mode': config.get('evidence_mode', 'quotes'), 'sentence_version': VERSION if config.get('evidence_mode') == MODE else None,
               'token_version': name_spans.VERSION if config.get('evidence_mode') == name_spans.MODE else None,

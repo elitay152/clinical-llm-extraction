@@ -23,11 +23,14 @@ DOSE = re.compile(r'\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|μg|g|ml|units?)\b', re.I)
 def prepare(source, run, output):
     manifest = load_manifest(source)
     train, development = read_splits(source)
-    report = json.loads((run/'run.json').read_text())
-    if report['train_file_sha256'] != hashlib.sha256((source/'train.jsonl').read_bytes()).hexdigest():
-        raise ValueError('Source training labels differ from classifier run')
-    trained = set(report['training_ids'])
-    selected = [r for r in train if r['id'] in trained] + development
+    if run is None:
+        selected = [r for r in manifest['candidates'] if r['split'] in ('train','development')]
+    else:
+        report = json.loads((run/'run.json').read_text())
+        if report['train_file_sha256'] != hashlib.sha256((source/'train.jsonl').read_bytes()).hexdigest():
+            raise ValueError('Source training labels differ from classifier run')
+        trained = set(report['training_ids'])
+        selected = [r for r in train if r['id'] in trained] + development
     ids = [r['id'] for r in selected]
     if not manifest.get('test_locked') or any(r['split'] not in ('train','development') for r in selected):
         raise ValueError('Name relabeling requires locked train/development source splits')
@@ -36,7 +39,7 @@ def prepare(source, run, output):
     revised = dict(manifest, format='silver-medication-names-v1', prompt_version=name_spans.NAME_PROTOCOL,
                    system_prompt=PROMPT.read_text(), labeling_ids=ids,
                    source_manifest_sha256=hashlib.sha256((source/'manifest.json').read_bytes()).hexdigest(),
-                   source_classifier_run_sha256=hashlib.sha256((run/'run.json').read_bytes()).hexdigest(),
+                   source_classifier_run_sha256=hashlib.sha256((run/'run.json').read_bytes()).hexdigest() if run else None,
                    name_label_scope='all explicit medicinal-agent mentions, regardless of regimen/status/person')
     output.mkdir(parents=True, exist_ok=False)
     write_json(output/'manifest.json', revised)
@@ -162,12 +165,12 @@ def collect(directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest='command',required=True)
-    p=sub.add_parser('prepare');p.add_argument('source',type=Path);p.add_argument('run',type=Path);p.add_argument('output',type=Path)
+    p=sub.add_parser('prepare');p.add_argument('source',type=Path);p.add_argument('output',type=Path);p.add_argument('--membership-run',type=Path)
     p=sub.add_parser('label');p.add_argument('directory',type=Path);p.add_argument('--split',choices=['train','development'],required=True)
     p.add_argument('--model',required=True);p.add_argument('--base-url',required=True);p.add_argument('--limit',type=int,default=1);p.add_argument('--max-tokens',type=int,default=3500)
     p=sub.add_parser('collect');p.add_argument('directory',type=Path)
     args=parser.parse_args()
-    if args.command=='prepare':result=prepare(args.source,args.run,args.output)
+    if args.command=='prepare':result=prepare(args.source,args.membership_run,args.output)
     elif args.command=='label':result=label(args.directory,args.split,args.model,args.base_url,args.limit,args.max_tokens)
     else:result=collect(args.directory)
     print(json.dumps(result,indent=2))

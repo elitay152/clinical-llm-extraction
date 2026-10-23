@@ -1,11 +1,12 @@
 # Experiment design
 
-Question: how closely can a LoRA-tuned student reproduce a teacher's medication
-extraction, compared with the same student before fine-tuning?
+Question: how well can biomedical token classification and prompted or fine-tuned
+language models reproduce source-grounded medication-name references?
 
 ## Frozen data splits
 
 ```bash
+python scripts/prepare_data.py --limit 200
 python scripts/prepare_data.py --limit 1000
 python scripts/prepare_experiment.py data/silver/my-experiment
 ```
@@ -24,35 +25,43 @@ selection does not represent all notes.
 ## Label and develop
 
 ```bash
-.venv/bin/python scripts/pseudo_label.py label data/silver/my-experiment \
-  --backend hosted --model gpt-4.1-mini-2025-04-14 \
-  --base-url https://api.openai.com/v1 --split train --limit 60 --max-tokens 2000
-.venv/bin/python scripts/pseudo_label.py label data/silver/my-experiment \
-  --backend hosted --model gpt-4.1-mini-2025-04-14 \
-  --base-url https://api.openai.com/v1 --split development --limit 20 --max-tokens 2000
-python scripts/pseudo_label.py collect data/silver/my-experiment
-```
-
-Test labeling, implicit split selection, and collection of test responses are
-blocked for frozen experiments. Keep the test set unlabeled until model, prompt,
-and training choices are finalized. Development data supports those choices;
-only training rows reach the optimizer. See [label acceptance rules](distillation.md).
-
-The student is pinned in `configs/student.json`; its prompt file and evidence mode are specified there. Training snapshots the prompt and model revision.
-
-```bash
-.venv/bin/python scripts/train_distillation.py data/silver/my-experiment \
-  --output artifacts/my-student --steps 100
-.venv/bin/python scripts/evaluate_distillation.py artifacts/my-student \
+.venv/bin/python scripts/label_medication_names.py prepare \
+  data/silver/my-experiment data/silver/my-name-labels
+.venv/bin/python scripts/label_medication_names.py label data/silver/my-name-labels \
+  --model gpt-4.1-mini-2025-04-14 --base-url https://api.openai.com/v1 \
+  --split train --limit 60
+.venv/bin/python scripts/label_medication_names.py label data/silver/my-name-labels \
+  --model gpt-4.1-mini-2025-04-14 --base-url https://api.openai.com/v1 \
+  --split development --limit 20
+python scripts/label_medication_names.py collect data/silver/my-name-labels
+.venv/bin/python scripts/train_token_classifier.py data/silver/my-name-labels \
+  --output artifacts/my-classifier
+.venv/bin/python scripts/evaluate_token_classifier.py artifacts/my-classifier \
   --output artifacts/my-development-comparison
 ```
 
+The label commands make up to 80 paid teacher requests, preserve raw responses,
+and resume by ID. Rejections do not trigger replacements. Naming and boundary
+rules are in [the name-labeling protocol](name-labeling.md); classifier settings
+are pinned in `configs/token-classifier.json`.
+
+Test labeling, implicit split selection, and collection of test responses are
+blocked for frozen experiments. Keep test notes unlabeled until model selection
+ends. Development data supports those choices; only training rows reach the
+optimizer. Use [iterative experiments](iterative-training.md) to audit and freeze
+a reference version before controlled comparisons.
+
+For prompted and LoRA-tuned language-model comparisons, use the same name-label
+directory with [the generative workflow](distillation.md). Attribute/status
+extraction requires the full-regimen label format described there.
+
 ## Evaluation
 
-Both checkpoints use the saved training prompt and greedy decoding. Report JSON
-validity, schema/span validity, and exact-document agreement. The default
-name-span task reports exact source-span and unique name-text precision/recall/F1
-against teacher references; it does not evaluate attributes or status.
+Name extraction reports exact source-span and unique name-text precision,
+recall, and F1, plus exact-document agreement. Names are case-sensitive; repeated
+occurrences remain distinct in span metrics. The classifier decodes BIO labels;
+generative models use a saved prompt and greedy decoding. All compared models
+must use the same source membership and reference version.
 
 Full-schema modes report medication-record precision/recall/F1. Record equality is case-sensitive
 and includes name, strength, dose, route, frequency, and status, retaining

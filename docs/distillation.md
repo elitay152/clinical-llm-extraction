@@ -11,7 +11,19 @@ the cached clinical notes. It excludes reserved annotation notes and exact
 normalized duplicates, then freezes 10 training and 2 validation source groups.
 Labels apply only to the supplied excerpt.
 
-Individual stages, as an alternative to the end-to-end runner:
+For a bounded pilot on full-regimen teacher labels, cache the prefix first:
+
+```bash
+python scripts/prepare_data.py --limit 200
+.venv/bin/python scripts/run_distillation_pilot.py \
+  --silver data/silver/my-pilot --output artifacts/my-adapter \
+  --comparison artifacts/my-comparison
+```
+
+The runner makes up to four paid teacher requests using `TEACHER_API_KEY`.
+Defaults are `TEACHER_MODEL=gpt-4.1-mini` and
+`TEACHER_API_BASE_URL=https://api.openai.com/v1`.
+Individual stages:
 
 ```bash
 python scripts/pseudo_label.py prepare data/silver/my-pilot --limit 12 --window dosage
@@ -44,8 +56,8 @@ those token boundaries, preserving Unicode offsets and whitespace. Unknown,
 reversed, duplicate, and non-integer ranges are rejected. An empty array means
 no medication names were selected; no attributes or status are predicted.
 
-Targets include exact, token-aligned occurrences of teacher medication names
-inside their supporting evidence. Identical spans are deduplicated across
+Targets use native name-mention references when available, or exact,
+token-aligned medication names inside regimen evidence. Identical spans are deduplicated across
 medication records. Unalignable training rows are excluded and recorded in the
 local run metadata; unalignable development references fail evaluation.
 `synthetic_lab_negatives` adds eight fixed lab-only denial examples to training,

@@ -20,25 +20,15 @@ deduplicated. An empty list means no named agents were selected, not that the
 patient takes no medication. Teacher self-review and source matching do not
 establish completeness or clinical correctness.
 
-To create a separate version on a classifier's training membership and existing
-development notes:
-
-```bash
-.venv/bin/python scripts/label_medication_names.py prepare \
-  data/silver/my-experiment artifacts/my-classifier data/silver/my-name-labels
-.venv/bin/python scripts/label_medication_names.py label data/silver/my-name-labels \
-  --split train --model gpt-4.1-mini-2025-04-14 \
-  --base-url https://api.openai.com/v1 --limit 3
-.venv/bin/python scripts/label_medication_names.py label data/silver/my-name-labels \
-  --split development --model gpt-4.1-mini-2025-04-14 \
-  --base-url https://api.openai.com/v1 --limit 1
-.venv/bin/python scripts/label_medication_names.py collect data/silver/my-name-labels
-```
+Follow [the experiment workflow](experiment.md) to label a new frozen split.
+To restrict a new label version to an existing classifier's training membership
+and accepted development notes, add `--membership-run artifacts/my-classifier`
+to the `prepare SOURCE OUTPUT` command.
 
 Label commands make paid hosted requests using `TEACHER_API_KEY`. They resume by
 ID, preserve raw responses, and do not automatically replace rejected responses.
 The manifest seals the prompt, source membership, original manifest hash, and
-classifier-run hash. Test labeling is blocked. Source labels remain unchanged;
+classifier-run hash when a membership run is supplied. Test labeling is blocked. Source labels remain unchanged;
 all generated data and reports belong in ignored `data/` and `artifacts/` paths.
 
 Train with the [token classifier workflow](token-classifier.md). Native name
