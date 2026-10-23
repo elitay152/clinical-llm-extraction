@@ -172,14 +172,14 @@ def validate_resolved_response(candidate, medications, negative):
             'input_sha256': candidate['input_sha256']}
 
 
-def hosted_response(candidate, model, base_url, max_tokens):
+def hosted_response(candidate, model, base_url, max_tokens, system_prompt=SYSTEM):
     parsed = urllib.parse.urlsplit(base_url)
     if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError('Teacher API base URL must be HTTPS, without credentials/query/fragment')
     key = os.environ.get('TEACHER_API_KEY')
     if not key:
         raise ValueError('TEACHER_API_KEY is missing; add it securely in environment settings')
-    body = json.dumps({'model': model, 'messages': [{'role': 'system', 'content': SYSTEM},
+    body = json.dumps({'model': model, 'messages': [{'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': candidate['text']}], 'temperature': 0,
             'max_tokens': max_tokens, 'response_format': {'type': 'json_object'}}).encode()
     req = urllib.request.Request(base_url.rstrip('/') + '/chat/completions', body,

@@ -13,7 +13,8 @@ Using the [frozen split workflow](experiment.md) and the training dependencies:
   --output artifacts/my-classifier-development
 ```
 
-Training uses teacher-attested name spans and optional synthetic lab-only
+Training accepts [native medication-name mentions](name-labeling.md) or names
+located in regimen evidence, plus optional synthetic lab-only
 negatives. Unalignable training rows are recorded and excluded. Subword
 continuations, special tokens, and padding are masked from the loss. Class
 weights are square-root inverse training frequencies, normalized to mean one.

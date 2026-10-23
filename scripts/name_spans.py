@@ -5,6 +5,7 @@ import re
 
 MODE = 'name_spans'
 VERSION = 'source-tokens-v1'
+NAME_PROTOCOL = 'medication-name-mentions-v1'
 
 
 def source_tokens(text):
@@ -44,6 +45,21 @@ def reference_payload(record):
     starts = {t['start']: i for i, t in enumerate(tokens, 1)}
     ends = {t['end']: i for i, t in enumerate(tokens, 1)}
     pairs = set()
+    if 'name_mentions' in record:
+        if record.get('name_label_protocol') != NAME_PROTOCOL or not isinstance(record['name_mentions'], list):
+            raise ValueError('Unsupported name-mention reference protocol')
+        previous_end = -1
+        for span in record['name_mentions']:
+            if (not isinstance(span, dict) or set(span) != {'start', 'end', 'text'}
+                    or type(span['start']) is not int or type(span['end']) is not int
+                    or not 0 <= span['start'] < span['end'] <= len(text)
+                    or text[span['start']:span['end']] != span['text']
+                    or span['start'] not in starts or span['end'] not in ends
+                    or span['start'] < previous_end):
+                raise ValueError('Name reference needs sorted, disjoint, exact token-aligned source spans')
+            pairs.add((starts[span['start']], ends[span['end']]))
+            previous_end = span['end']
+        return {'medication_name_spans': [list(pair) for pair in sorted(pairs)]}
     for med in record['medications']:
         matches = []
         for evidence in med['evidence']:
