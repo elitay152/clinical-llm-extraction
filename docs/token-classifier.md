@@ -36,3 +36,32 @@ An optional `--negative-controls PATH` accepts a JSON array of separate syntheti
 records with empty `medications`, IDs, text, `input_sha256`, and
 `label_origin: synthetic`. Their results are reported separately. Data, weights,
 and evaluation files stay in ignored `data/` and `artifacts/` directories.
+
+## Inference and local demo
+
+A saved classifier directory needs its weights, tokenizer, and `run.json` only;
+training labels and a teacher API key are not required. With the training
+requirements installed, extract names from a UTF-8 file or stdin:
+
+```bash
+.venv/bin/python scripts/predict_medication_names.py artifacts/my-classifier --input note.txt
+printf 'The patient takes aspirin daily.' | \
+  .venv/bin/python scripts/predict_medication_names.py artifacts/my-classifier
+```
+
+JSON contains `medication_names` with exact `text`, zero-based `start`, and
+exclusive `end` offsets measured in Unicode code points, plus elapsed extraction
+time (tokenization and inference, excluding model loading). Repeated mentions
+remain separate; no names returns an empty list. Blank and overlong inputs fail
+with a nonzero exit code. No input or output files are saved automatically.
+
+Launch the browser demo with the same checkpoint:
+
+```bash
+.venv/bin/python scripts/serve_demo.py artifacts/my-classifier --port 8000
+```
+
+Open `http://127.0.0.1:8000`. The demo includes editable synthetic notes,
+highlighted source evidence, and JSON output. It runs on localhost with no model
+API calls or note storage. Requests are limited to 64 KiB; the checkpoint's
+wordpiece context limit also applies. Use synthetic text for demonstrations.
