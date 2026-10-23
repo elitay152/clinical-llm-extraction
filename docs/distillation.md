@@ -1,7 +1,8 @@
 # Distillation workflow
 
 Follow the [quick start](../README.md#quick-start) for installation and credentials.
-The student initializes from the pinned SmolLM2-135M-Instruct base checkpoint. Evaluation definitions and limitations are in [experiment design](experiment.md).
+The student checkpoint and evidence mode are configured in `configs/student.json`.
+Evaluation definitions and limitations are in [experiment design](experiment.md).
 
 ## Inputs and labeling
 
@@ -10,7 +11,19 @@ the cached clinical notes. It excludes reserved annotation notes and exact
 normalized duplicates, then freezes 10 training and 2 validation source groups.
 Labels apply only to the supplied excerpt.
 
-Individual stages, as an alternative to the end-to-end runner:
+For a bounded pilot on full-regimen teacher labels, cache the prefix first:
+
+```bash
+python scripts/prepare_data.py --limit 200
+.venv/bin/python scripts/run_distillation_pilot.py \
+  --silver data/silver/my-pilot --output artifacts/my-adapter \
+  --comparison artifacts/my-comparison
+```
+
+The runner makes up to four paid teacher requests using `TEACHER_API_KEY`.
+Defaults are `TEACHER_MODEL=gpt-4.1-mini` and
+`TEACHER_API_BASE_URL=https://api.openai.com/v1`.
+Individual stages:
 
 ```bash
 python scripts/pseudo_label.py prepare data/silver/my-pilot --limit 12 --window dosage
@@ -33,6 +46,49 @@ supporting quotes, and quotes that occur exactly once in the input. Python
 computes Unicode offsets. Empty outputs require quoted denial evidence.
 Accepted records retain `teacher_generated` provenance; rejected responses and
 reasons remain available for inspection.
+
+## Medication-name spans
+
+The default `name_spans` task uses `configs/student-name-prompt.txt`. The student
+receives indexed source tokens and returns `medication_name_spans`: inclusive
+`[first_token_id, last_token_id]` ranges. Code copies the original text between
+those token boundaries, preserving Unicode offsets and whitespace. Unknown,
+reversed, duplicate, and non-integer ranges are rejected. An empty array means
+no medication names were selected; no attributes or status are predicted.
+
+Targets use native name-mention references when available, or exact,
+token-aligned medication names inside regimen evidence. Identical spans are deduplicated across
+medication records. Unalignable training rows are excluded and recorded in the
+local run metadata; unalignable development references fail evaluation.
+`synthetic_lab_negatives` adds eight fixed lab-only denial examples to training,
+with separate synthetic provenance. They never enter development metrics. Source
+indexing guarantees copied text, not that a selected term is a medication.
+
+Evaluation reports exact name-span precision/recall/F1, unique case-sensitive
+name-text precision/recall/F1 per document, JSON/range validity, and exact-document
+agreement. These metrics evaluate a narrower task than full medication records.
+Teacher evidence may omit repeated mentions, so span recall is agreement with
+the attested reference occurrences, not a completeness measure.
+
+## Sentence-ID evidence
+
+With `evidence_mode: sentence_ids`, the student receives numbered source sentences and returns integer
+`evidence_sentence_ids` for each medication, plus `negative_evidence_sentence_ids`
+for an explicit denial. Code resolves IDs to exact text and Unicode offsets;
+unknown, duplicate, or non-integer IDs are rejected. Medication names and populated
+attributes must still occur verbatim in the selected evidence.
+
+Teacher quotes are converted to overlapping sentence IDs without changing their
+medication fields. Adjacent selected sentences resolve to a contiguous source span,
+including the original whitespace. Repeated sentences remain distinguishable by ID.
+Segmentation uses deterministic punctuation/line boundaries with abbreviation
+handling; it is a source indexing rule, not a clinical sentence parser.
+
+`evidence_mode: sentence_ids` uses `configs/student-sentence-prompt.txt`.
+Quote-based output is supported by `evidence_mode: quotes` and
+`configs/student-prompt.txt`. The run saves the mode, prompt, and segmentation
+version for evaluation. Exact source retrieval does not prove that the selected
+sentence supports the medication or its attributes.
 
 ## Train and compare
 

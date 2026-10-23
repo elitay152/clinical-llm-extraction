@@ -1,6 +1,7 @@
 """Compare baseline/adapted student agreement with held-out teacher labels."""
 import argparse
 import collections
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,17 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.pseudo_label import validate_teacher_response, SYSTEM
+from scripts import name_spans
+from scripts.pseudo_label import validate_teacher_response
 from scripts.train_distillation import read_splits
+from scripts.sentence_evidence import MODE, VERSION, render_source, resolve_response
+
+
+def saved_prompt(report):
+    prompt = report['system_prompt']
+    if report.get('prompt_sha256') and hashlib.sha256(prompt.encode()).hexdigest() != report['prompt_sha256']:
+        raise ValueError('Training prompt checksum mismatch')
+    return prompt
 
 
 def record_key(record):
@@ -18,7 +28,11 @@ def record_key(record):
     return json.dumps({key: record[key] for key in ('name', 'strength', 'dose', 'route', 'frequency', 'status')}, sort_keys=True)
 
 
-def score(reference, predictions):
+def score(reference, predictions, evidence_mode='quotes'):
+    if evidence_mode == name_spans.MODE:
+        return name_spans.score(reference, predictions)
+    if evidence_mode not in ('quotes', MODE):
+        raise ValueError('Unsupported evidence mode')
     if not reference:
         raise ValueError('No held-out teacher references; refusing zero-example metrics')
     by_id = {p['id']: p for p in predictions}
@@ -31,7 +45,7 @@ def score(reference, predictions):
         candidate = dict(ref, input_sha256=ref['input_sha256'])
         try:
             json.loads(prediction['response']); json_valid += 1
-            parsed = validate_teacher_response(candidate, prediction['response'])
+            parsed = resolve_response(candidate, prediction['response']) if evidence_mode == MODE else validate_teacher_response(candidate, prediction['response'])
             valid += 1
             actual = collections.Counter(record_key(r) for r in parsed['medications'])
         except (ValueError, TypeError, KeyError) as error:
@@ -66,12 +80,17 @@ def main():
     report = json.loads((args.run / 'run.json').read_text())
     silver = Path(report['silver_directory'])
     _, references = read_splits(silver)
+    reference_split = 'development' if (silver / 'development.jsonl').exists() else 'validation'
     if not references:
-        raise ValueError('No accepted validation teacher labels; label and collect validation first')
+        raise ValueError('No accepted development/validation teacher labels')
     if set(report['source_groups']) & {r['source_group'] for r in references}:
         raise ValueError('Evaluation source groups overlap trained examples')
-    if report['system_prompt'] != SYSTEM:
-        raise ValueError('Prompt differs from the training run')
+    system_prompt = saved_prompt(report)
+    evidence_mode = report.get('evidence_mode', 'quotes')
+    if evidence_mode == MODE and report.get('sentence_version') != VERSION:
+        raise ValueError('Sentence segmentation version differs from the training run')
+    if evidence_mode == name_spans.MODE and report.get('token_version') != name_spans.VERSION:
+        raise ValueError('Source token version differs from the training run')
     os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -79,13 +98,14 @@ def main():
     torch.set_num_threads(report['threads'])
     tokenizer = AutoTokenizer.from_pretrained(args.run, local_files_only=True)
     model = AutoModelForCausalLM.from_pretrained(report['model'], revision=report['revision'],
-                                                torch_dtype=torch.float32, local_files_only=True)
+                                                torch_dtype=getattr(torch, report.get('torch_dtype', 'float32')), local_files_only=True,
+                                                attn_implementation=report.get('attention_implementation', 'sdpa'))
     args.output.mkdir(parents=True, exist_ok=False)
     def predict(model):
         model.eval(); predictions = []
         for ref in references:
-            prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': SYSTEM},
-                     {'role': 'user', 'content': ref['text']}], tokenize=False, add_generation_prompt=True)
+            prompt = tokenizer.apply_chat_template([{'role': 'system', 'content': system_prompt},
+                     {'role': 'user', 'content': name_spans.render_source(ref['text']) if evidence_mode == name_spans.MODE else render_source(ref['text'], evidence_mode)}], tokenize=False, add_generation_prompt=True)
             tokens = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             if tokens['input_ids'].shape[1] + args.max_tokens > model.config.max_position_embeddings:
                 raise ValueError('Evaluation exceeds model context; refusing silent truncation')
@@ -102,13 +122,15 @@ def main():
     model = PeftModel.from_pretrained(model, args.run, local_files_only=True)
     adapted = predict(model)
     (args.output / 'adapted.json').write_text(json.dumps(adapted, indent=2) + '\n')
-    result = {'baseline': score(references, baseline), 'adapted': score(references, adapted),
-              'reference_origin': 'teacher_generated', 'model': report['model'], 'revision': report['revision'],
-              'validation_ids': [r['id'] for r in references], 'max_tokens': args.max_tokens,
-              'decoding': 'greedy', 'device': 'cpu', 'threads': report['threads'],
+    result = {'baseline': score(references, baseline, evidence_mode), 'adapted': score(references, adapted, evidence_mode),
+              'evidence_mode': evidence_mode, 'token_version': report.get('token_version'), 'reference_origin': 'teacher_generated', 'reference_split': reference_split, 'model': report['model'], 'revision': report['revision'],
+              'reference_ids': [r['id'] for r in references], 'max_tokens': args.max_tokens,
+              'decoding': 'greedy', 'device': 'cpu', 'torch_dtype': report.get('torch_dtype', 'float32'), 'threads': report['threads'],
               'limitations': ['Very small silver-reference comparison; no clinical gold labels.',
-                              'Exact-text grouping only; article/patient overlap remains unresolved.',
-                              'Exact record scoring excludes evidence position agreement; evidence source matches are validated.',
+                              'Source-text grouping does not establish article/patient independence.',
+                              ('Name-span metrics exclude attributes/status and count only teacher-attested occurrences.'
+                               if evidence_mode == name_spans.MODE else
+                               'Exact record scoring excludes evidence position agreement; evidence source matches are validated.'),
                               'Generation times include model first-use overhead and are not production latency benchmarks.']}
     (args.output / 'comparison.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
