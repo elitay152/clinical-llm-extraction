@@ -94,6 +94,8 @@ def label(directory, split, model, base_url, limit, max_tokens):
     if split not in ('train','development') or limit < 1 or max_tokens < 1:
         raise ValueError('Explicit train/development split and positive limits are required')
     manifest, by_id = checked_manifest(directory)
+    if manifest.get('training_extension') and split != 'train':
+        raise ValueError('Training extensions cannot label development notes')
     config = {'model':model, 'base_url':base_url, 'max_tokens':max_tokens,
               'prompt_version':name_spans.NAME_PROTOCOL, 'response_format':'json_object'}
     path = directory/'teacher.json'
@@ -134,9 +136,24 @@ def collect(directory):
             rejected.append({'id':identifier,'reason':str(error)})
         else:
             record['teacher'] = row['teacher']; accepted.append(record)
+    base_train = []; base_development = []
+    extension = manifest.get('training_extension')
+    if extension:
+        source = Path(extension['source'])
+        for name, digest in extension['source_hashes'].items():
+            if hashlib.sha256((source/name).read_bytes()).hexdigest() != digest:
+                raise ValueError('Training extension source changed')
+        base_train, base_development = read_splits(source)
+        if any(row['split'] != 'train' for row in accepted):
+            raise ValueError('Training extension received non-training labels')
+    combined = base_train + base_development + accepted
     for split in ['train','development','test']:
-        (directory/f'{split}.jsonl').write_text(''.join(json.dumps(r,ensure_ascii=False)+'\n' for r in accepted if r['split']==split))
+        if extension and split != 'train':
+            (directory/f'{split}.jsonl').write_bytes((source/f'{split}.jsonl').read_bytes())
+        else:
+            (directory/f'{split}.jsonl').write_text(''.join(json.dumps(r,ensure_ascii=False)+'\n' for r in combined if r['split']==split))
     report = {'responses':len(rows),'accepted':len(accepted),'accepted_by_split':dict(collections.Counter(r['split'] for r in accepted)),
+              'total_training_rows':sum(r['split']=='train' for r in combined),
               'rejected':rejected, 'pending':len(manifest['labeling_ids'])-len(rows),
               'interpretation':'Source/boundary validation and teacher self-review; not independent completeness verification.'}
     write_json(directory/'report.json',report)

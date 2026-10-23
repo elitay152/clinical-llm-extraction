@@ -49,6 +49,6 @@ python -m unittest discover -s tests -v
 - [Distillation workflow](docs/distillation.md) and [experiment design](docs/experiment.md)
 - [Medication schema](schemas/medications.schema.json) and [annotation protocol](docs/annotation.md)
 - [Optional offline annotation tool](docs/annotation-tool.md)
-- [Iterative classifier experiments](docs/iterative-training.md)
+- [Iterative classifier experiments](docs/iterative-training.md) and [training expansion](docs/training-expansion.md)
 - [Medication-name token classifier](docs/token-classifier.md) and [name-labeling rules](docs/name-labeling.md)
 - [Treatment-name training](docs/training.md)
