@@ -11,9 +11,12 @@ from scripts import name_spans, token_classifier
 
 
 class MedicationNameExtractor:
-    def __init__(self, run):
+    def __init__(self, run, device="cpu"):
         import torch
         from transformers import AutoModelForTokenClassification, AutoTokenizer
+        if device not in ('cpu', 'cuda'):
+            raise ValueError('Device must be cpu or cuda')
+        self.device = device
         run = Path(run)
         self.report = json.loads((run/'run.json').read_text())
         if (self.report['alignment_version'] != token_classifier.VERSION
@@ -25,7 +28,7 @@ class MedicationNameExtractor:
         self.model = AutoModelForTokenClassification.from_pretrained(run, local_files_only=True)
         if self.model.config.id2label != dict(enumerate(token_classifier.LABELS)):
             raise ValueError('Saved model labels differ from BIO schema')
-        self.model.eval()
+        self.model.to(self.device).eval()
 
     def predict_payload(self, text):
         import torch
@@ -35,8 +38,8 @@ class MedicationNameExtractor:
         encoded, words = token_classifier.encode_record(
             {'text': text}, self.tokenizer, self.config['max_length'], labeled=False)
         with torch.inference_mode(), torch.autocast(
-                'cpu', dtype=torch.bfloat16, enabled=self.config['compute_dtype'] == 'bfloat16'):
-            logits = self.model(**{k: torch.tensor([v]) for k, v in encoded.items()}).logits
+                self.device, dtype=torch.bfloat16, enabled=self.config['compute_dtype'] == 'bfloat16'):
+            logits = self.model(**{k: torch.tensor([v], device=self.device) for k, v in encoded.items()}).logits
         payload = token_classifier.decode_predictions(
             words, logits.argmax(-1)[0].tolist(), len(name_spans.source_tokens(text)))
         return payload, time.monotonic()-started

@@ -1,8 +1,8 @@
 # Hosted demo
 
 Create a blank **Gradio** Space in Hugging Face using the hardware available
-on your account. The app performs CPU inference; its PyTorch 2.8.0 runtime is
-compatible with the Space’s ZeroGPU version requirements. A public Space lets visitors try the
+on your account. The hosted app requests GPU time only for extraction on
+ZeroGPU, and otherwise falls back to CPU. Its runtime uses PyTorch 2.8.0. A public Space lets visitors try the
 app, while its checkpoint stays in a separate private model repository.
 
 Add a fine-grained **deployment token** as `HF_TOKEN` in the cloud development

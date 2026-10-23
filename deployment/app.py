@@ -3,6 +3,8 @@ from functools import lru_cache
 import os
 
 import gradio as gr
+import spaces
+import torch
 from huggingface_hub import snapshot_download
 
 from scripts.predict_medication_names import MedicationNameExtractor
@@ -16,10 +18,15 @@ def extractor():
                                  revision=os.environ['MODEL_REVISION'],
                                  token=os.environ.get('HF_TOKEN'),
                                  allow_patterns=['*.json', '*.txt', 'model.safetensors'])
-    return MedicationNameExtractor(path)
+    return MedicationNameExtractor(path, device='cuda' if torch.cuda.is_available() else 'cpu')
 
 
+@spaces.GPU(duration=60)
 def extract(text):
+    if not isinstance(text, str) or not text.strip():
+        raise gr.Error('Provide nonempty note text')
+    if len(text.encode('utf-8')) > 65536:
+        raise gr.Error('Note must contain at most 64 KiB')
     try:
         result = extractor().predict(text)
     except ValueError as error:
