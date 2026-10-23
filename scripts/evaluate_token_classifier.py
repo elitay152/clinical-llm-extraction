@@ -17,7 +17,11 @@ def main():
     parser.add_argument('run', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--negative-controls', type=Path)
+    parser.add_argument('--reference-directory', type=Path)
+    parser.add_argument('--training-diagnostic', action='store_true')
     args = parser.parse_args()
+    if args.training_diagnostic and args.reference_directory:
+        raise ValueError('Training diagnostics cannot use alternate references')
     if args.output.exists():
         raise ValueError('Output exists; choose a new directory')
     report = json.loads((args.run/'run.json').read_text())
@@ -26,11 +30,18 @@ def main():
     config = report['config']
     silver = Path(report['silver_directory'])
     training, references = read_splits(silver)
+    if args.reference_directory:
+        _, alternate = read_splits(args.reference_directory)
+        if {r['id']:r['input_sha256'] for r in alternate} != {r['id']:r['input_sha256'] for r in references}:
+            raise ValueError('Alternate reference source membership differs')
+        references = alternate
+    if args.training_diagnostic:
+        references = training
     if not references:
-        raise ValueError('No development references')
+        raise ValueError('No references for requested split')
     if hashlib.sha256((silver/'train.jsonl').read_bytes()).hexdigest() != report['train_file_sha256']:
         raise ValueError('Training source labels changed since training')
-    if set(report['source_groups']) & {r['source_group'] for r in references}:
+    if not args.training_diagnostic and set(report['source_groups']) & {r['source_group'] for r in references}:
         raise ValueError('Development groups overlap trained examples')
     controls = json.loads(args.negative_controls.read_text()) if args.negative_controls else []
     if controls and (len({r['id'] for r in controls}) != len(controls)
@@ -60,12 +71,16 @@ def main():
                                 'elapsed_seconds': time.monotonic()-started})
         return predictions
     predictions = predict(references)
-    result = {'development': name_spans.score(references, predictions), 'reference_origin': 'teacher_generated',
-              'reference_split': 'development' if (silver/'development.jsonl').exists() else 'validation',
+    reference_root = args.reference_directory or silver
+    label_file = 'train.jsonl' if args.training_diagnostic else ('development.jsonl' if (reference_root/'development.jsonl').exists() else 'validation.jsonl')
+    result = {'training_diagnostic' if args.training_diagnostic else 'development': name_spans.score(references, predictions), 'reference_origin': 'teacher_generated',
+              'reference_split': 'train' if args.training_diagnostic else label_file.removesuffix('.jsonl'),
+              'reference_labels_sha256': hashlib.sha256((reference_root/label_file).read_bytes()).hexdigest(),
+              'diagnostic_only': args.training_diagnostic,
               'reference_ids': [r['id'] for r in references], 'model': config['model'], 'revision': config['revision'],
               'alignment_version': token_classifier.VERSION, 'device': 'cpu', 'threads': report['threads'],
               'compute_dtype': config['compute_dtype'],
-              'limitations': ['Small teacher-labeled development set; not clinical accuracy.',
+              'limitations': [('Training-set diagnostic; no generalization claim.' if args.training_diagnostic else 'Small teacher-labeled development set; not clinical accuracy.'),
                               'Labels cover teacher-attested names, not verified exhaustive mentions.',
                               'Source grouping does not establish patient independence or exclude pretraining overlap.',
                               'Names only; medication attributes and status are not predicted.']}

@@ -1,4 +1,6 @@
 """Align medication-name references to BIO labels and decode source spans."""
+import math
+
 from scripts import name_spans
 
 LABELS = ['O', 'B-MED', 'I-MED']
@@ -60,3 +62,14 @@ def decode_predictions(word_ids, predictions, word_count):
     if start is not None:
         pairs.append([start+1, word_count])
     return {'medication_name_spans': pairs}
+
+
+def loss_weights(counts, rule='sqrt_inverse_frequency'):
+    if any(counts.get(label, 0) <= 0 for label in range(3)):
+        raise ValueError('Training needs examples of all three BIO labels')
+    if rule == 'uniform':
+        return [1.0] * 3
+    if rule != 'sqrt_inverse_frequency':
+        raise ValueError('Unsupported class weighting rule')
+    raw = [math.sqrt(sum(counts.values())/(3*counts[label])) for label in range(3)]
+    return [weight/(sum(raw)/3) for weight in raw]

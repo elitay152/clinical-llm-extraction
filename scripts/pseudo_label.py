@@ -46,6 +46,10 @@ def load_manifest(directory):
         raise ValueError('Frozen experiment is missing its manifest checksum')
     if seal.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != seal.read_text().strip():
         raise ValueError('Frozen manifest changed')
+    for name, digest in manifest.get('frozen_label_hashes', {}).items():
+        label_file = directory / name
+        if not label_file.exists() or hashlib.sha256(label_file.read_bytes()).hexdigest() != digest:
+            raise ValueError('Frozen label snapshot changed')
     groups = {}
     for row in manifest['candidates']:
         if hashlib.sha256(row['text'].encode()).hexdigest() != row['input_sha256']:

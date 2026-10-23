@@ -4,7 +4,6 @@ import collections
 import hashlib
 import importlib.metadata
 import json
-import math
 import os
 from pathlib import Path
 import random
@@ -59,10 +58,8 @@ def main():
         example, _ = token_classifier.encode_record(record, tokenizer, config['max_length'])
         rows.append(record); examples.append(example)
     counts = collections.Counter(label for example in examples for label in example['labels'] if label != -100)
-    if any(counts[label] == 0 for label in range(3)):
-        raise ValueError('Training needs examples of all three BIO labels')
-    raw_weights = [math.sqrt(sum(counts.values())/(3*counts[label])) for label in range(3)]
-    weights = torch.tensor([w/(sum(raw_weights)/3) for w in raw_weights], dtype=torch.float32)
+    weight_rule = config.get('class_weighting', 'sqrt_inverse_frequency')
+    weights = torch.tensor(token_classifier.loss_weights(counts, weight_rule), dtype=torch.float32)
     model = AutoModelForTokenClassification.from_pretrained(
         config['model'], revision=revision, num_labels=3,
         id2label=dict(enumerate(token_classifier.LABELS)),
@@ -103,7 +100,7 @@ def main():
               'synthetic_training_inputs': [{'id': r['id'], 'input_sha256': r['input_sha256']} for r in synthetic],
               'skipped_training_rows': skipped, 'development_rows': len(development),
               'labels': token_classifier.LABELS, 'label_counts': dict(counts), 'class_weights': weights.tolist(),
-              'class_weight_rule': 'square-root inverse training frequency, normalized to mean one',
+              'class_weight_rule': weight_rule,
               'losses': losses, 'epoch_mean_losses': epoch_losses, 'steps': len(losses),
               'parameters': sum(p.numel() for p in model.parameters()), 'device': 'cpu',
               'parameter_dtype': 'float32', 'threads': torch.get_num_threads(), 'elapsed_seconds': time.monotonic()-started,
