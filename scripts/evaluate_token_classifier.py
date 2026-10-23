@@ -4,12 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import name_spans, token_classifier
 from scripts.train_distillation import read_splits
+from scripts.predict_medication_names import MedicationNameExtractor
 
 
 def main():
@@ -51,24 +51,13 @@ def main():
                      or set(report['training_ids']) & {r['id'] for r in controls}
                      or {r['input_sha256'] for r in name_spans.synthetic_negatives()} & {r['input_sha256'] for r in controls}):
         raise ValueError('Negative controls must be separate synthetic negatives')
-    import torch
-    from transformers import AutoModelForTokenClassification, AutoTokenizer
-    torch.set_num_threads(report['threads'])
-    tokenizer = AutoTokenizer.from_pretrained(args.run, local_files_only=True, use_fast=True)
-    model = AutoModelForTokenClassification.from_pretrained(args.run, local_files_only=True)
-    if model.config.id2label != dict(enumerate(token_classifier.LABELS)):
-        raise ValueError('Saved model labels differ from BIO schema')
-    model.eval()
+    extractor = MedicationNameExtractor(args.run)
     def predict(records):
         predictions = []
         for record in records:
-            encoded, words = token_classifier.encode_record(record, tokenizer, config['max_length'], labeled=False)
-            started = time.monotonic()
-            with torch.no_grad(), torch.autocast('cpu', dtype=torch.bfloat16, enabled=config['compute_dtype']=='bfloat16'):
-                logits = model(**{k:torch.tensor([v]) for k,v in encoded.items()}).logits
-            payload = token_classifier.decode_predictions(words, logits.argmax(-1)[0].tolist(), len(name_spans.source_tokens(record['text'])))
+            payload, elapsed = extractor.predict_payload(record['text'])
             predictions.append({'id': record['id'], 'response': json.dumps(payload),
-                                'elapsed_seconds': time.monotonic()-started})
+                                'elapsed_seconds': elapsed})
         return predictions
     predictions = predict(references)
     reference_root = args.reference_directory or silver

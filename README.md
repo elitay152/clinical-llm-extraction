@@ -25,6 +25,21 @@ Use [iterative experiments](docs/iterative-training.md) for overfit checks,
 learning curves, ablations, and seed repeats. The [generative workflow](docs/distillation.md)
 provides optional prompted and fine-tuned language-model comparisons.
 
+## Try a trained model
+
+Use a saved token-classifier checkpoint from the experiment workflow:
+
+```bash
+printf 'The patient takes aspirin daily.' | \
+  .venv/bin/python scripts/predict_medication_names.py artifacts/my-classifier
+.venv/bin/python scripts/serve_demo.py artifacts/my-classifier
+```
+
+The [local demo](docs/token-classifier.md#inference-and-local-demo) opens at
+`http://127.0.0.1:8000` with editable synthetic notes and highlighted medication
+names. Inference runs locally and returns exact source text and character offsets.
+Weights are not distributed with this repository.
+
 Network access is needed to `huggingface.co`, `*.huggingface.co`, `*.hf.co`,
 `api.github.com`, `raw.githubusercontent.com`, and your teacher provider.
 Data, credentials, labels, predictions, reports, and weights stay outside Git.
