@@ -38,7 +38,8 @@ printf 'The patient takes aspirin daily.' | \
 The [local demo](docs/token-classifier.md#inference-and-local-demo) opens at
 `http://127.0.0.1:8000` with editable synthetic notes and highlighted medication
 names. Inference runs locally and returns exact source text and character offsets.
-Weights are not distributed with this repository.
+Weights are not distributed with this repository. For remote access, see
+[Hugging Face Spaces deployment](docs/deployment.md).
 
 Network access is needed to `huggingface.co`, `*.huggingface.co`, `*.hf.co`,
 `api.github.com`, `raw.githubusercontent.com`, and your teacher provider.

@@ -60,10 +60,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run', type=Path)
     parser.add_argument('--port', type=int, default=8000)
+    parser.add_argument('--host', default='127.0.0.1', help='Bind address; use 0.0.0.0 inside a container')
     args = parser.parse_args()
     extractor = MedicationNameExtractor(args.run)
-    server = HTTPServer(('127.0.0.1', args.port), make_handler(extractor))
-    print(f'Demo: http://127.0.0.1:{server.server_port}', flush=True)
+    server = HTTPServer((args.host, args.port), make_handler(extractor))
+    print(f'Demo: http://{args.host}:{server.server_port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
