@@ -78,3 +78,25 @@ matching source text does not establish a correct medication association.
 Add `--regimen-rules` with `--dose-run` to [the deployment command](deployment.md)
 for the source-candidate demo mode. To deploy a trained attribute or joint model
 instead, use `--regimen-run`. Optional weights stay in the private model repository.
+
+## Relation classifier experiment
+
+The optional relation experiment freezes the name/dose encoder and trains a small
+residual classifier using contextual medication/attribute spans and source-layout
+features. Its initial decisions match the rules. Each candidate pair receives an
+independent score, allowing shared attributes or no association; selected reference
+attributes without a resolved medication are excluded from negative supervision.
+
+```bash
+.venv/bin/python scripts/train_relation_classifier.py \
+  --encoder artifacts/my-dose-classifier --data data/silver/my-regimen-labels \
+  --predictions artifacts/my-candidate-development/predictions.json \
+  --output artifacts/my-relations
+```
+
+The command checks frozen labels and source-group separation, caches encoder
+features, and requires a six-note memorization check before full training. The
+fixed configuration and threshold apply to both reference-entity and frozen
+pipeline-prediction comparisons. Reports include pair precision/recall/F1 and
+exact complete records. Checkpoints, feature caches, and reports stay under the
+ignored output directory. This is an offline experiment; the demo uses the rules.
