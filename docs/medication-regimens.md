@@ -122,3 +122,27 @@ copies development/test files byte-for-byte. Source candidates omitted by the
 teacher provide negative pairs; unresolved selected attributes remain excluded.
 Run the relation training command with the expanded dataset, the same configuration,
 and the same saved development predictions to compare the resulting model.
+
+## Abstention thresholds
+
+Select separate dose, route, and frequency thresholds with five source-grouped
+training folds, then evaluate the frozen thresholds on development data:
+
+```bash
+.venv/bin/python scripts/calibrate_relation_thresholds.py \
+  --run artifacts/my-relations --data data/silver/my-expanded-regimen-labels \
+  --predictions artifacts/my-candidate-development/predictions.json \
+  --output artifacts/my-relation-thresholds
+```
+
+Each fold refits the relation head and holds out complete source groups. The encoder
+and cached span features remain fixed; the encoder has seen name/dose labels from
+some held-out training groups. This measures head-level threshold selection, not
+cross-validation of the full training pipeline. Ambiguous pairs remain excluded.
+
+Selection maximizes out-of-fold pair F1 while keeping false-link counts no higher
+and precision no lower than the rules, with ties favoring fewer false links and
+higher thresholds. The fixed grid includes abstaining from every link in a field
+(`null`). Thresholds act on sigmoid scores, not calibrated correctness probabilities.
+The command saves its plan, fold assignments, and selected thresholds before the
+development comparison. Detailed artifacts stay outside Git; deployment is separate.
