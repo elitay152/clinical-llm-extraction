@@ -100,3 +100,25 @@ fixed configuration and threshold apply to both reference-entity and frozen
 pipeline-prediction comparisons. Reports include pair precision/recall/F1 and
 exact complete records. Checkpoints, feature caches, and reports stay under the
 ignored output directory. This is an offline experiment; the demo uses the rules.
+
+Training-only error review and label expansion use the reserved, unlabeled training
+notes in the frozen manifest. Selection prioritizes source-layout signals such as
+parentheses, coordination words, and attribute-rich text; these are sampling
+heuristics, not verified clinical relationships.
+
+```bash
+.venv/bin/python scripts/expand_relation_training.py audit \
+  data/silver/my-regimen-labels artifacts/my-relations artifacts/training-errors.json
+.venv/bin/python scripts/expand_relation_training.py prepare \
+  data/silver/my-regimen-labels data/silver/my-relation-selection --count 19
+.venv/bin/python scripts/expand_relation_training.py label data/silver/my-relation-selection
+.venv/bin/python scripts/expand_relation_training.py collect \
+  data/silver/my-relation-selection data/silver/my-expanded-regimen-labels
+```
+
+The teacher labels names, doses, routes, and frequencies with existing source checks
+and bounded retries. Collection revalidates responses, reports rejected notes, and
+copies development/test files byte-for-byte. Source candidates omitted by the
+teacher provide negative pairs; unresolved selected attributes remain excluded.
+Run the relation training command with the expanded dataset, the same configuration,
+and the same saved development predictions to compare the resulting model.
