@@ -141,16 +141,16 @@ def link_doses(text, names, doses, rule=LINKING_RULE):
     return relations
 
 
-def output(text, payload):
+def output(text, payload, linking_rule=LINKING_RULE):
     names, doses = resolve(text, payload)
-    relations = link_doses(text, names, doses)
+    relations = link_doses(text, names, doses, rule=linking_rule)
     linked = {r['dose_index'] for r in relations}
     return {'medication_names': names, 'dose_spans': doses,
             'medications': [{'name': name, 'doses': [doses[r['dose_index']] for r in relations
                                                    if r['medication_index'] == index]}
                             for index, name in enumerate(names)],
             'unlinked_doses': [dose for index, dose in enumerate(doses) if index not in linked],
-            'dose_linking': LINKING_RULE}
+            'dose_linking': linking_rule}
 
 
 def synthetic_negatives():

@@ -1,4 +1,4 @@
-"""Fine-tune a biomedical encoder on medication-name or name/dose BIO labels."""
+"""Fine-tune a biomedical encoder on source-aligned medication BIO labels."""
 import argparse
 import collections
 import hashlib
@@ -12,7 +12,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts import medication_doses, name_spans, token_classifier
+from scripts import medication_attributes, medication_doses, medication_regimens, name_spans, token_classifier
 from scripts.train_distillation import read_splits
 
 
@@ -26,9 +26,10 @@ def main():
     if args.output.exists():
         raise ValueError('Output exists; choose a new directory')
     config = json.loads(args.config.read_text())
-    if config.get('task', 'names') not in ('names', 'name_dose'):
+    classifiers={'names':token_classifier,'name_dose':medication_doses,'regimen':medication_regimens,'attributes':medication_attributes}
+    if config.get('task','names') not in classifiers:
         raise ValueError('Unsupported classifier task')
-    classifier = medication_doses if config.get('task') == 'name_dose' else token_classifier
+    classifier=classifiers[config.get('task','names')]
     revision = config['revision']
     if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
         raise ValueError('Encoder revision must be an exact commit SHA')
@@ -36,10 +37,10 @@ def main():
         raise ValueError('Epochs and batch size must be positive')
     if config['compute_dtype'] not in ('float32', 'bfloat16'):
         raise ValueError('Unsupported compute precision')
-    if classifier is medication_doses:
+    if classifier is not token_classifier:
         from scripts.pseudo_label import load_manifest
         if not load_manifest(args.silver_directory).get('frozen_label_hashes'):
-            raise ValueError('Freeze dose references before training')
+            raise ValueError('Freeze attribute references before training')
     training_digest = hashlib.sha256((args.silver_directory/'train.jsonl').read_bytes()).hexdigest()
     train, development = read_splits(args.silver_directory)
     if args.training_limit is not None:
@@ -75,7 +76,7 @@ def main():
             rows.append(record); examples.append(example)
     if len(rows) < 2:
         raise ValueError('Need at least two aligned teacher training examples')
-    synthetic = ((medication_doses.synthetic_negatives() if classifier is medication_doses else name_spans.synthetic_negatives())
+    synthetic = ((classifier.synthetic_negatives() if classifier is not token_classifier else name_spans.synthetic_negatives())
                  if config['synthetic_lab_negatives'] else [])
     for record in synthetic:
         example, _ = classifier.encode_record(record, tokenizer, config['max_length'])
@@ -116,7 +117,7 @@ def main():
         raise ValueError('Training labels changed during training')
     args.output.mkdir(parents=True, exist_ok=False)
     model.save_pretrained(args.output); tokenizer.save_pretrained(args.output)
-    report = {'task': 'medication name/dose token classification' if classifier is medication_doses else 'medication-name token classification', 'alignment_version': classifier.VERSION,
+    report = {'task': config.get('task','names')+' token classification', 'alignment_version': classifier.VERSION,
               'source_token_version': name_spans.VERSION, 'config': config,
               'silver_directory': str(args.silver_directory.resolve()),
               'train_file_sha256': training_digest,

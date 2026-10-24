@@ -61,8 +61,11 @@ def main():
     parser.add_argument('run', type=Path)
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--host', default='127.0.0.1', help='Bind address; use 0.0.0.0 inside a container')
+    attributes=parser.add_mutually_exclusive_group()
+    attributes.add_argument('--attribute-model',type=Path,help='Optional separate route/frequency checkpoint')
+    attributes.add_argument('--attribute-candidates',action='store_true',help='Use source route/frequency candidates')
     args = parser.parse_args()
-    extractor = MedicationNameExtractor(args.run)
+    extractor = MedicationNameExtractor(args.run,attribute_run=args.attribute_model,attribute_candidates=args.attribute_candidates)
     server = HTTPServer((args.host, args.port), make_handler(extractor))
     print(f'Demo: http://{args.host}:{server.server_port}', flush=True)
     try:
