@@ -146,3 +146,31 @@ higher thresholds. The fixed grid includes abstaining from every link in a field
 (`null`). Thresholds act on sigmoid scores, not calibrated correctness probabilities.
 The command saves its plan, fold assignments, and selected thresholds before the
 development comparison. Detailed artifacts stay outside Git; deployment is separate.
+
+## Final held-out comparison
+
+Freeze the rules, both relation checkpoints, the existing encoder, and selected
+thresholds before creating test references. `--source` is the expanded frozen
+training dataset; `--original-data` is the original relation training snapshot.
+
+```bash
+.venv/bin/python scripts/final_relation_comparison.py freeze \
+  --source data/silver/my-expanded-regimen-labels \
+  --original-data data/silver/my-regimen-labels \
+  --encoder artifacts/my-dose-classifier \
+  --original artifacts/my-original-relations --expanded artifacts/my-relations \
+  --calibration artifacts/my-relation-thresholds --output artifacts/my-final-test
+.venv/bin/python scripts/final_relation_comparison.py label artifacts/my-final-test
+.venv/bin/python scripts/final_relation_comparison.py evaluate artifacts/my-final-test
+```
+
+The sealed plan hashes checkpoints, thresholds, code, prompts, and source snapshots.
+Labeling uses the same teacher protocols with exact-source validation; every
+reserved test note must pass before scoring. References and predictions remain in
+the ignored output directory, leaving source snapshots unchanged. All approaches
+receive identical predicted entities. The primary metric is exact complete-record
+F1; secondary metrics are field-specific pair F1 and false-link counts.
+
+This final comparison describes the frozen approaches, rather than selecting a
+new demo model from test results. Further model or threshold selection needs a
+fresh holdout. Only aggregate chart values are published in the README.

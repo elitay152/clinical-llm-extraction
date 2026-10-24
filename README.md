@@ -19,6 +19,8 @@ and conservative links while retaining the dose model. Medication status is outs
 
 ## Performance
 
+### Medication names: development
+
 ![Paired-seed teacher-reference name-span F1 for 44 versus 81 training notes; mean increases from 91.2% to 92.4%, with one seed regressing](docs/images/training-performance.svg)
 
 The same ten frozen, AI-reviewed development notes were used across three paired
@@ -32,6 +34,23 @@ The default names-only demo uses the expanded-pool seed-42 checkpoint (**91.3%**
 92.4% is the three-seed mean. Detailed reports and predictions stay outside Git.
 Regenerate the aggregate chart with `python scripts/plot_performance.py`
 (requires `matplotlib==3.10.1`).
+
+### Medication links: held-out test
+
+![Final comparison on 20 reserved test notes: complete-record F1 and false medication–attribute link counts for rules, learned links, expanded training, and training-fold abstention](docs/images/relation-test-comparison.svg)
+
+Four frozen linking approaches use identical predicted medication names, doses,
+routes, and frequencies on **20 reserved test notes**. Expanded training achieved
+**68.7% complete-record F1**, versus **56.6%** for rules, with **eight versus five
+false attribute links**. The learned approaches recover more associations but can
+add incorrect ones; stricter abstention drops too many correct links.
+
+These are source-checked teacher references with candidate-limited attribute
+coverage, not clinical gold. The small test set is now used; these results do not
+justify further tuning against it. The demo retains the rules selected during
+development. See [the final comparison workflow](docs/medication-regimens.md#final-held-out-comparison).
+Regenerate this aggregate chart with `python scripts/plot_relation_comparison.py
+--report artifacts/my-final-test/run.json` (requires `matplotlib==3.10.1`).
 
 ## Quick start
 

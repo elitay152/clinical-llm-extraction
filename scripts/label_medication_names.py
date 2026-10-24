@@ -70,7 +70,7 @@ def validate_response(candidate, response):
             if start in starts and end in ends:
                 matches.append((start,end))
         if not matches:
-            raise ValueError('Name has no exact token-aligned occurrence in its context')
+            raise ValueError('Name has no exact token-aligned occurrence in its context; copy capitalization exactly from that context, including sentence-initial capital letters')
         for start,end in matches:
             spans[(start,end)] = {'start':start, 'end':end, 'text':text[start:end]}
     record = {key:candidate[key] for key in ['id','text','split','source_group','input_sha256']}
