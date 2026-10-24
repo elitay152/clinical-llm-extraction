@@ -58,3 +58,22 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual([call.kwargs['folder_path'] for call in api.upload_folder.call_args_list],
                          ['/package/model', '/package/space'])
         api.add_space_variable.assert_any_call('owner/demo', key='MODEL_REVISION', value='checkpoint-commit')
+
+    def test_optional_dose_weights_are_only_in_private_package(self):
+        from scripts import medication_doses
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            report={'alignment_version':'bio','source_token_version':'tokens','threads':2,
+                    'training_ids':['private-id'],'config':{'max_length':512,'compute_dtype':'bfloat16'}}
+            for folder in ('names','doses'):
+                run=root/folder;run.mkdir()
+                for name in MODEL_FILES:
+                    (run/name).write_text('checkpoint fixture')
+                value=dict(report)
+                if folder=='doses':value['alignment_version']=medication_doses.VERSION
+                (run/'run.json').write_text(json.dumps(value))
+            package(root/'names',root/'output',root/'doses')
+            self.assertTrue((root/'output/model/dose/model.safetensors').exists())
+            self.assertFalse(list((root/'output/space').rglob('*.safetensors')))
+            metadata=json.loads((root/'output/model/dose/run.json').read_text())
+            self.assertNotIn('training_ids',metadata)

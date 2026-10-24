@@ -10,52 +10,69 @@ from huggingface_hub import snapshot_download
 from scripts.predict_medication_names import MedicationNameExtractor
 
 
-@lru_cache(maxsize=1)
-def extractor():
+@lru_cache(maxsize=2)
+def extractor(task='Medication names'):
     path = os.environ.get('MODEL_PATH')
     if not path:
-        path = snapshot_download(repo_id=os.environ['MODEL_REPO'],
-                                 revision=os.environ['MODEL_REVISION'],
+        dose_mode=task != 'Medication names'
+        prefix='dose/' if dose_mode else ''
+        revision=os.environ['DOSE_MODEL_REVISION'] if dose_mode else os.environ['MODEL_REVISION']
+        path = snapshot_download(repo_id=os.environ['MODEL_REPO'], revision=revision,
                                  token=os.environ.get('HF_TOKEN'),
-                                 allow_patterns=['*.json', '*.txt', 'model.safetensors'])
+                                 allow_patterns=[prefix+name for name in ('config.json','run.json','tokenizer.json',
+                                                 'tokenizer_config.json','special_tokens_map.json','vocab.txt','model.safetensors')])
+        if dose_mode:
+            path=os.path.join(path,'dose')
     return MedicationNameExtractor(path, device='cuda' if torch.cuda.is_available() else 'cpu')
 
 
 @spaces.GPU(duration=60)
-def extract(text):
+def extract(text, task='Medication names'):
+    if task not in TASKS:
+        raise gr.Error('Unknown extraction task')
     if not isinstance(text, str) or not text.strip():
         raise gr.Error('Provide nonempty note text')
     if len(text.encode('utf-8')) > 65536:
         raise gr.Error('Note must contain at most 64 KiB')
     try:
-        result = extractor().predict(text)
+        result = extractor(task).predict(text)
     except ValueError as error:
         raise gr.Error(str(error)) from error
     segments = []
     cursor = 0
-    for span in result['medication_names']:
+    highlighted=[(span,'Medication') for span in result['medication_names']]
+    highlighted.extend((span,'Dose') for span in result.get('dose_spans',[]))
+    for span,kind in sorted(highlighted,key=lambda item:item[0]['start']):
         segments.append((text[cursor:span['start']], None))
-        segments.append((span['text'], 'Medication'))
+        segments.append((span['text'], kind))
         cursor = span['end']
     segments.append((text[cursor:], None))
     return segments, result
 
 
-with gr.Blocks(title='Medication name extractor', analytics_enabled=False) as demo:
-    gr.Markdown('# Medication name extractor\n'
-                'Extract medication names with their source evidence. Names only; '
-                'dose, route, frequency, and status are outside this task. '
+TASKS=['Medication names']
+if os.environ.get('DOSE_MODEL_REVISION'):
+    TASKS.append('Names and doses (experimental)')
+
+
+with gr.Blocks(title='Medication extractor', analytics_enabled=False) as demo:
+    gr.Markdown('# Medication extractor\n'
+                'Extract medication names with their source evidence. '
+                + ('Choose the experimental dose mode to include amounts. ' if len(TASKS)>1 else '')
+                + 'Route, frequency, and status are outside this task. '
                 'Teacher-reference agreement does not establish clinical accuracy.')
+    task=gr.Dropdown(TASKS,value=TASKS[0],label='Extraction task',visible=len(TASKS)>1)
     note = gr.Textbox(label='Synthetic note', lines=5, max_lines=12,
                       value='The patient takes aspirin 81 mg daily and metformin 500 mg twice daily.')
     gr.Examples(examples=[['Warfarin was discontinued. The patient now takes apixaban 5 mg twice daily.'],
                           ['Laboratory results: sodium 138 mmol/L, potassium 4.2 mmol/L, glucose 95 mg/dL.']],
                 inputs=note)
-    button = gr.Button('Extract names', variant='primary')
+    button = gr.Button('Extract', variant='primary')
     evidence = gr.HighlightedText(label='Source evidence', combine_adjacent=False,
-                                  color_map={'Medication': '#bcebd9'})
-    output = gr.JSON(label='JSON output')
-    button.click(extract, inputs=note, outputs=[evidence, output], concurrency_limit=1)
+                                  color_map={'Medication': '#bcebd9','Dose':'#f8dfab'})
+    with gr.Accordion('JSON output',open=False):
+        output = gr.JSON(label='Structured extraction')
+    button.click(extract, inputs=[note,task], outputs=[evidence, output], concurrency_limit=1)
     gr.Markdown('Use synthetic text. The application does not save submitted notes or call a model API. '
                 'Inputs beyond the checkpoint context limit are rejected.')
 

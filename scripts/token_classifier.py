@@ -17,7 +17,7 @@ def word_labels(record):
     return labels
 
 
-def encode_record(record, tokenizer, max_length=512, labeled=True):
+def encode_record(record, tokenizer, max_length=512, labeled=True, label_function=None):
     words = name_spans.source_tokens(record['text'])
     if not words:
         raise ValueError('Empty source has no classifiable tokens')
@@ -29,7 +29,7 @@ def encode_record(record, tokenizer, max_length=512, labeled=True):
         raise ValueError('Tokenizer omitted a source token')
     result = dict(encoded)
     if labeled:
-        labels = word_labels(record)
+        labels = (label_function or word_labels)(record)
         previous = None
         result['labels'] = []
         for word in word_ids:
@@ -64,12 +64,12 @@ def decode_predictions(word_ids, predictions, word_count):
     return {'medication_name_spans': pairs}
 
 
-def loss_weights(counts, rule='sqrt_inverse_frequency'):
-    if any(counts.get(label, 0) <= 0 for label in range(3)):
-        raise ValueError('Training needs examples of all three BIO labels')
+def loss_weights(counts, rule='sqrt_inverse_frequency', num_labels=3):
+    if any(counts.get(label, 0) <= 0 for label in range(num_labels)):
+        raise ValueError('Training needs examples of all BIO labels')
     if rule == 'uniform':
-        return [1.0] * 3
+        return [1.0] * num_labels
     if rule != 'sqrt_inverse_frequency':
         raise ValueError('Unsupported class weighting rule')
-    raw = [math.sqrt(sum(counts.values())/(3*counts[label])) for label in range(3)]
-    return [weight/(sum(raw)/3) for weight in raw]
+    raw = [math.sqrt(sum(counts.values())/(num_labels*counts[label])) for label in range(num_labels)]
+    return [weight/(sum(raw)/num_labels) for weight in raw]
