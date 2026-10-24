@@ -50,7 +50,7 @@ class InferenceTests(unittest.TestCase):
     def test_demo_and_prediction(self):
         status, body = self.request('GET', '/')
         self.assertEqual(status, 200)
-        self.assertIn(b'Medication name extractor', body)
+        self.assertIn(b'Medication extractor', body)
         status, body = self.request('POST', '/predict', json.dumps({'text': 'No medication.'}))
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['medication_names'], [])

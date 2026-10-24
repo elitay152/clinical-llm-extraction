@@ -42,3 +42,10 @@ Use synthetic notes. The application does not store submitted notes; hosted
 traffic also passes through the hosting provider. Public Space code and the
 model repository identifier are visible, while the checkpoint and token remain
 private. Weights are not added to the public GitHub repository.
+
+To offer an experimental dose mode alongside the default names-only model, add
+`--dose-run artifacts/my-dose-classifier` when packaging/deploying. Its checkpoint
+is stored under `dose/` in the same private model repository. The uploader sets
+`DOSE_MODEL_REVISION`; the existing read-only Space token covers both checkpoints.
+The interface then offers a task selector and highlights medication names and
+doses separately. The default names-only model remains the root checkpoint.

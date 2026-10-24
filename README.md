@@ -1,6 +1,6 @@
 # Clinical Medication Extraction
 
-Train medication-name extractors from LLM-generated, source-checked labels.
+Train medication-name and dose extractors from LLM-generated, source-checked labels.
 Compare a biomedical token classifier with prompted and LoRA-tuned language
 models using frozen data splits and controlled experiments.
 
@@ -10,10 +10,12 @@ models using frozen data splits and controlled experiments.
 (Hugging Face sign-in required while the Space is private).
 
 Enter a synthetic note to highlight medication names and inspect their exact
-source text, zero-based start positions, and exclusive end positions. Dose,
-route, frequency, and medication status are outside this task.
+source text, zero-based start positions, and exclusive end positions. The
+experimental **Names and doses** mode adds dose spans and medication–dose links;
+ambiguous doses remain unlinked. Route, frequency, and medication status are
+outside this version.
 
-![Hosted medication-name extractor highlighting aspirin and metformin in a synthetic note](docs/images/demo.png)
+![Hosted extractor highlighting aspirin, metformin, and their doses in a synthetic note](docs/images/demo.png)
 
 ## Performance
 
@@ -26,7 +28,7 @@ or held-out test performance. Both pools include eight additional synthetic
 negatives. Five epochs produced 65 versus 115 optimizer steps, so the comparison
 changes training data and compute together.
 
-The demo uses the expanded-pool seed-42 checkpoint (**91.3%** on these references);
+The default names-only demo uses the expanded-pool seed-42 checkpoint (**91.3%** on these references);
 92.4% is the three-seed mean. Detailed reports and predictions stay outside Git.
 Regenerate the aggregate chart with `python scripts/plot_performance.py`
 (requires `matplotlib==3.10.1`).
@@ -86,5 +88,6 @@ python -m unittest discover -s tests -v
 - [Medication schema](schemas/medications.schema.json) and [annotation protocol](docs/annotation.md)
 - [Optional offline annotation tool](docs/annotation-tool.md)
 - [Iterative classifier experiments](docs/iterative-training.md) and [training expansion](docs/training-expansion.md)
+- [Medication-name and dose extraction](docs/medication-doses.md)
 - [Medication-name token classifier](docs/token-classifier.md) and [name-labeling rules](docs/name-labeling.md)
 - [Treatment-name training](docs/training.md)

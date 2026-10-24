@@ -9,12 +9,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-SCRIPTS = ('predict_medication_names.py', 'token_classifier.py', 'name_spans.py')
+SCRIPTS = ('predict_medication_names.py', 'token_classifier.py', 'name_spans.py', 'medication_doses.py')
 MODEL_FILES = ('config.json', 'model.safetensors', 'tokenizer.json',
                'tokenizer_config.json', 'special_tokens_map.json', 'vocab.txt')
 
 
-def package(run, output):
+def package(run, output, dose_run=None):
     run, output = Path(run), Path(output)
     report = json.loads((run/'run.json').read_text())
     # Deployment metadata excludes training IDs, label hashes, and workspace paths.
@@ -29,6 +29,18 @@ def package(run, output):
     for name in MODEL_FILES:
         shutil.copyfile(run/name, output/'model'/name)
     (output/'model/run.json').write_text(json.dumps(metadata, indent=2)+'\n')
+    if dose_run:
+        dose_run=Path(dose_run)
+        from scripts import medication_doses
+        dose_report=json.loads((dose_run/'run.json').read_text())
+        if dose_report['alignment_version'] != medication_doses.VERSION:
+            raise ValueError('Optional dose checkpoint must use name/dose labels')
+        (output/'model/dose').mkdir()
+        for name in MODEL_FILES:
+            shutil.copyfile(dose_run/name,output/'model/dose'/name)
+        dose_metadata={key:dose_report[key] for key in ('alignment_version','source_token_version','threads')}
+        dose_metadata['config']={key:dose_report['config'][key] for key in ('max_length','compute_dtype')}
+        (output/'model/dose/run.json').write_text(json.dumps(dose_metadata,indent=2)+'\n')
     for name in SCRIPTS:
         shutil.copyfile(ROOT/'scripts'/name, output/'space/scripts'/name)
     for source, target in [('app.py', 'app.py'), ('requirements.txt', 'requirements.txt'),
@@ -54,6 +66,8 @@ def upload(output, space, model_repo, token):
             raise ValueError('Target Space must use the Gradio SDK')
     api.add_space_variable(space, key='MODEL_REPO', value=model_repo)
     api.add_space_variable(space, key='MODEL_REVISION', value=commit.oid)
+    if (output/'model/dose').exists():
+        api.add_space_variable(space,key='DOSE_MODEL_REVISION',value=commit.oid)
     api.upload_folder(repo_id=space, repo_type='space', folder_path=str(output/'space'),
                       commit_message='Deploy medication-name demo')
     return f'https://huggingface.co/spaces/{space}'
@@ -64,6 +78,7 @@ def main():
     parser.add_argument('run', type=Path)
     parser.add_argument('--output', type=Path, required=True, help='New staging directory under ignored artifacts/')
     parser.add_argument('--space', help='Deploy to OWNER/SPACE; otherwise package only')
+    parser.add_argument('--dose-run',type=Path,help='Optional experimental name/dose checkpoint')
     parser.add_argument('--model-repo', help='Private OWNER/MODEL checkpoint repository')
     args = parser.parse_args()
     if args.space and not args.model_repo:
@@ -73,7 +88,7 @@ def main():
     token = os.environ.get('HF_TOKEN')
     if args.space and not token:
         parser.error('Set HF_TOKEN securely in environment settings to deploy')
-    package(args.run, args.output)
+    package(args.run, args.output, args.dose_run)
     print(upload(args.output, args.space, args.model_repo, token) if args.space else f'Packaged: {args.output}')
 
 
