@@ -76,6 +76,40 @@ def checked(directory):
     return plan
 
 
+def annotate_record(candidate, teacher):
+    record = candidate; history = []
+    for task in ('names', 'dose', 'regimen'):
+        if task == 'names':
+            prompt = names.PROMPT.read_text(); content = candidate['text']
+            validate = lambda response: names.validate_response(candidate, response)
+        else:
+            module, _, _, prompt_path, validator = attributes.annotation_spec(task)
+            prompt = prompt_path.read_text()
+            marked, meds, options = module.marked_source(record)
+            payload = dict(marked_note=marked, medication_indices=list(range(len(meds))))
+            if task == 'dose': payload['dose_indices'] = list(range(len(options)))
+            else: payload.update({f'{f}_indices': list(range(len(spans))) for f, spans in options.items()})
+            content = json.dumps(payload)
+            validate = lambda response: validator(record, response)
+        for attempt in range(teacher['max_attempts']):
+            response, metadata = hosted_response({'text': content}, teacher['model'],
+                teacher['base_url'], teacher['max_tokens'], system_prompt=prompt)
+            try:
+                revised = validate(response)
+            except (ValueError, TypeError, KeyError) as error:
+                reason = str(error)
+            else:
+                reason = None
+            history.append(dict(task=task, response=response, metadata=metadata, validation_error=reason))
+            if reason is None:
+                record = revised; break
+            content = json.dumps(dict(source=content, previous_output=response, validation_error=reason,
+                                      request='Return corrected complete JSON under the same protocol.'))
+        else:
+            return dict(id=candidate['id'], input_sha256=candidate['input_sha256'], record=None, attempts=history)
+    return dict(id=candidate['id'], input_sha256=candidate['input_sha256'], record=record, attempts=history)
+
+
 def annotate(directory, workers=2):
     if type(workers) is not int or not 1 <= workers <= 4:
         raise ValueError('Use 1–4 workers')
@@ -84,41 +118,9 @@ def annotate(directory, workers=2):
     ids = {r['id'] for r in existing}
     if len(ids) != len(existing) or not ids <= {r['id'] for r in plan['candidates']}:
         raise ValueError('Unexpected or duplicate annotations')
-    def request(candidate):
-        record = candidate; history = []
-        for task in ('names', 'dose', 'regimen'):
-            if task == 'names':
-                prompt = names.PROMPT.read_text(); content = candidate['text']
-                validate = lambda response: names.validate_response(candidate, response)
-            else:
-                module, _, _, prompt_path, validator = attributes.annotation_spec(task)
-                prompt = prompt_path.read_text()
-                marked, meds, options = module.marked_source(record)
-                payload = dict(marked_note=marked, medication_indices=list(range(len(meds))))
-                if task == 'dose': payload['dose_indices'] = list(range(len(options)))
-                else: payload.update({f'{f}_indices': list(range(len(spans))) for f, spans in options.items()})
-                content = json.dumps(payload)
-                validate = lambda response: validator(record, response)
-            for attempt in range(plan['teacher']['max_attempts']):
-                response, metadata = hosted_response({'text': content}, plan['teacher']['model'],
-                    plan['teacher']['base_url'], plan['teacher']['max_tokens'], system_prompt=prompt)
-                try:
-                    revised = validate(response)
-                except (ValueError, TypeError, KeyError) as error:
-                    reason = str(error)
-                else:
-                    reason = None
-                history.append(dict(task=task, response=response, metadata=metadata, validation_error=reason))
-                if reason is None:
-                    record = revised; break
-                content = json.dumps(dict(source=content, previous_output=response, validation_error=reason,
-                                          request='Return corrected complete JSON under the same protocol.'))
-            else:
-                return dict(id=candidate['id'], input_sha256=candidate['input_sha256'], record=None, attempts=history)
-        return dict(id=candidate['id'], input_sha256=candidate['input_sha256'], record=record, attempts=history)
     pending = [r for r in plan['candidates'] if r['id'] not in ids]
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(request, r): r['id'] for r in pending}
+        futures = {executor.submit(annotate_record, r, plan['teacher']): r['id'] for r in pending}
         for future in as_completed(futures):
             result = future.result()
             with path.open('a') as stream: stream.write(json.dumps(result, ensure_ascii=False)+'\n')
