@@ -49,3 +49,11 @@ is stored under `dose/` in the same private model repository. The uploader sets
 `DOSE_MODEL_REVISION`; the existing read-only Space token covers both checkpoints.
 The interface then offers a task selector and highlights medication names and
 doses separately. The default names-only model remains the root checkpoint.
+
+Add `--regimen-rules` with `--dose-run` to enable source-candidate route and
+frequency extraction in the experimental regimen mode; this needs no new weights.
+Use `--regimen-run artifacts/my-attributes` instead to deploy the separate trained
+attribute model, or supply a joint regimen checkpoint. Model files are stored under `regimen/`
+in the private model repository and pinned with `REGIMEN_MODEL_REVISION`. The
+read-only Space token covers that checkpoint as well. No public weights or
+additional runtime credentials are required.

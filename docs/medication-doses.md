@@ -3,7 +3,8 @@
 The dose task adds `B-DOSE` and `I-DOSE` to the medication-name BIO labels.
 The classifier selects exact source spans; a separate conservative rule links
 nearby doses to names. Names, dose spans, and complete name–dose pairs are scored
-separately. Route, frequency, and medication status are outside this version.
+separately. For route and frequency extraction, use the [regimen workflow](medication-regimens.md).
+Medication status is outside these tasks.
 
 ## Labels
 

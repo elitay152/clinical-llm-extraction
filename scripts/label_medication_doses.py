@@ -1,4 +1,4 @@
-"""Annotate dose amounts and links while preserving frozen medication-name labels."""
+"""Annotate medication attributes while preserving the source label snapshot."""
 import argparse
 import collections
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,30 +9,41 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts import medication_doses, name_spans
+from scripts import medication_doses, medication_regimens, name_spans
 from scripts.pseudo_label import hosted_response, load_manifest, write_json
 from scripts.train_distillation import read_splits
 
 PROMPT = ROOT/'configs/dose-teacher-prompt.txt'
 
 
+def annotation_spec(task):
+    if task=='regimen':
+        return medication_regimens,'regimen_protocol','regimen',ROOT/'configs/regimen-teacher-prompt.txt',medication_regimens.validate_response
+    if task=='dose':
+        return medication_doses,'dose_protocol','dose',PROMPT,validate_response
+    raise ValueError('Unknown annotation task')
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def prepare(source, output):
+def prepare(source, output, task='dose'):
+    module,protocol_key,prefix,prompt,validator=annotation_spec(task)
     manifest = load_manifest(source)
     train, development = read_splits(source)
     if not manifest.get('test_locked') or not train or not development:
-        raise ValueError('Dose labeling requires frozen training/development splits and a locked test')
+        raise ValueError('Attribute labeling requires frozen training/development splits and a locked test')
     records = train+development
     for record in records:
         name_spans.reference_payload(record)
+        if task=='regimen':medication_doses.reference_spans(record)
     revised = dict(manifest)
     for key in ('frozen_label_hashes', 'training_extension', 'labeling_ids', 'system_prompt'):
         revised.pop(key, None)
-    revised.update(format='silver-medication-doses-v1', dose_protocol=medication_doses.PROTOCOL,
-                   system_prompt=PROMPT.read_text(), candidate_version=medication_doses.CANDIDATE_VERSION, label_records=records,
+    revised[protocol_key]=module.PROTOCOL
+    revised.update(format=f'silver-medication-{prefix}-v1', annotation_task=task,
+                   system_prompt=prompt.read_text(), candidate_version=module.CANDIDATE_VERSION, label_records=records,
                    labeling_ids=[r['id'] for r in records], source_directory=str(source.resolve()),
                    source_hashes={name:digest(source/name) for name in ('manifest.json','train.jsonl','development.jsonl','test.jsonl')})
     output.mkdir(parents=True, exist_ok=False)
@@ -43,10 +54,11 @@ def prepare(source, output):
 
 def checked(directory):
     manifest = load_manifest(directory)
-    if (manifest.get('dose_protocol') != medication_doses.PROTOCOL
-            or manifest.get('candidate_version') != medication_doses.CANDIDATE_VERSION
-            or manifest.get('system_prompt') != PROMPT.read_text() or not manifest.get('test_locked')):
-        raise ValueError('Dose protocol or frozen prompt differs')
+    module,protocol_key,prefix,prompt,validator=annotation_spec(manifest.get('annotation_task','dose'))
+    if (manifest.get(protocol_key) != module.PROTOCOL
+            or manifest.get('candidate_version') != module.CANDIDATE_VERSION
+            or manifest.get('system_prompt') != prompt.read_text() or not manifest.get('test_locked')):
+        raise ValueError('Annotation protocol or frozen prompt differs')
     rows = manifest['label_records']
     by_id = {row['id']:row for row in rows}
     if (len(by_id) != len(rows) or set(by_id) != set(manifest['labeling_ids'])
@@ -58,7 +70,7 @@ def checked(directory):
             raise ValueError('Dose selection differs from source candidates')
     source = Path(manifest['source_directory'])
     if any(digest(source/name) != value for name,value in manifest['source_hashes'].items()):
-        raise ValueError('Source name-label snapshot changed')
+        raise ValueError('Source label snapshot changed')
     return manifest, by_id
 
 
@@ -98,32 +110,36 @@ def validate_response(record, response):
 
 def label(directory, split, model, base_url, limit, workers):
     manifest, by_id = checked(directory)
+    module,protocol_key,prefix,prompt,validator=annotation_spec(manifest.get('annotation_task','dose'))
     if manifest.get('frozen_label_hashes'):
-        raise ValueError('Dose labels are already frozen')
+        raise ValueError('Attribute labels are already frozen')
     if limit < 1 or not 1 <= workers <= 4:
         raise ValueError('Positive request limit and 1–4 workers required')
-    config = {'model':model,'base_url':base_url,'max_tokens':3500,'protocol':medication_doses.PROTOCOL,
-              'prompt_sha256':digest(PROMPT),'candidate_version':medication_doses.CANDIDATE_VERSION,'max_attempts':3}
-    config_path = directory/'dose-teacher.json'
+    config = {'model':model,'base_url':base_url,'max_tokens':3500,'protocol':module.PROTOCOL,
+              'prompt_sha256':digest(prompt),'candidate_version':module.CANDIDATE_VERSION,'max_attempts':3}
+    config_path = directory/f'{prefix}-teacher.json'
     if config_path.exists() and json.loads(config_path.read_text()) != config:
-        raise ValueError('Dose teacher settings changed')
+        raise ValueError('Annotation teacher settings changed')
     write_json(config_path,config)
-    path = directory/'dose-responses.jsonl'
+    path = directory/f'{prefix}-responses.jsonl'
     rows = [json.loads(s) for s in path.read_text().splitlines()] if path.exists() else []
     completed = {r['id'] for r in rows}
     if len(rows) != len(completed) or not completed <= set(by_id):
         raise ValueError('Duplicate or unexpected dose responses')
     pending = [r for r in by_id.values() if r['split']==split and r['id'] not in completed][:limit]
     def request(record):
-        marked,names,candidates=medication_doses.marked_source(record)
-        payload={'marked_note':marked,'medication_indices':list(range(len(names))),
-                 'dose_indices':list(range(len(candidates)))}
+        marked,names,candidates=module.marked_source(record)
+        payload={'marked_note':marked,'medication_indices':list(range(len(names)))}
+        if prefix=='regimen':
+            payload.update({f'{field}_indices':list(range(len(options))) for field,options in candidates.items()})
+        else:
+            payload['dose_indices']=list(range(len(candidates)))
         content=json.dumps(payload)
         attempts=[]
         for _ in range(config['max_attempts']):
             response, metadata = hosted_response({'text':content},model,base_url,3500,system_prompt=manifest['system_prompt'])
             try:
-                validate_response(record,response)
+                validator(record,response)
             except (ValueError,TypeError,KeyError) as error:
                 reason=str(error)
             else:
@@ -156,20 +172,21 @@ def label(directory, split, model, base_url, limit, workers):
 
 def collect(directory, freeze=False):
     manifest, by_id = checked(directory)
+    module,protocol_key,prefix,prompt,validator=annotation_spec(manifest.get('annotation_task','dose'))
     if manifest.get('frozen_label_hashes'):
-        raise ValueError('Dose snapshot is already frozen')
-    config = json.loads((directory/'dose-teacher.json').read_text())
-    responses = [json.loads(s) for s in (directory/'dose-responses.jsonl').read_text().splitlines()]
+        raise ValueError('Attribute snapshot is already frozen')
+    config = json.loads((directory/f'{prefix}-teacher.json').read_text())
+    responses = [json.loads(s) for s in (directory/f'{prefix}-responses.jsonl').read_text().splitlines()]
     accepted=[]; rejected=[]; seen=set()
     for row in responses:
         identifier=row['id']
         if (identifier in seen or identifier not in by_id or row['teacher'] != config
                 or row['input_sha256'] != by_id[identifier]['input_sha256']):
-            raise ValueError('Dose response differs from frozen selection')
+            raise ValueError('Annotation response differs from frozen selection')
         seen.add(identifier)
         try:
-            record=validate_response(by_id[identifier],row['response'])
-            record['dose_teacher']=row['teacher']
+            record=validator(by_id[identifier],row['response'])
+            record[f'{prefix}_teacher']=row['teacher']
             accepted.append(record)
         except (ValueError,TypeError,KeyError) as error:
             rejected.append({'id':identifier,'reason':str(error)})
@@ -179,10 +196,14 @@ def collect(directory, freeze=False):
     report = {'accepted':dict(collections.Counter(r['split'] for r in accepted)), 'rejected':rejected,
               'pending':len(by_id)-len(seen), 'dose_mentions':sum(len(r['dose_mentions']) for r in accepted),
               'dose_relations':sum(len(r['dose_relations']) for r in accepted)}
-    write_json(directory/'dose-label-report.json',report)
+    if prefix=='regimen':
+        for field in medication_regimens.FIELDS:
+            report[f'{field}_mentions']=sum(len(r[f'{field}_mentions']) for r in accepted)
+            report[f'{field}_relations']=sum(len(r[f'{field}_relations']) for r in accepted)
+    write_json(directory/f'{prefix}-label-report.json',report)
     if freeze:
         if len(accepted) != len(by_id):
-            raise ValueError('All selected records must pass dose validation before freezing')
+            raise ValueError('All selected records must pass attribute validation before freezing')
         manifest['frozen_label_hashes'] = {f'{s}.jsonl':digest(directory/f'{s}.jsonl') for s in ('train','development','test')}
         write_json(directory/'manifest.json',manifest)
         (directory/'manifest.sha256').write_text(digest(directory/'manifest.json')+'\n')
@@ -192,13 +213,13 @@ def collect(directory, freeze=False):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
-    p=sub.add_parser('prepare');p.add_argument('source',type=Path);p.add_argument('output',type=Path)
+    p=sub.add_parser('prepare');p.add_argument('source',type=Path);p.add_argument('output',type=Path);p.add_argument('--task',choices=['dose','regimen'],default='dose')
     p=sub.add_parser('label');p.add_argument('directory',type=Path);p.add_argument('--split',choices=['train','development'],required=True)
     p.add_argument('--model',default='gpt-4.1-mini-2025-04-14');p.add_argument('--base-url',default='https://api.openai.com/v1')
     p.add_argument('--limit',type=int,default=1);p.add_argument('--workers',type=int,default=2)
     p=sub.add_parser('collect');p.add_argument('directory',type=Path);p.add_argument('--freeze',action='store_true')
     args=parser.parse_args()
-    if args.command=='prepare': result=prepare(args.source,args.output)
+    if args.command=='prepare': result=prepare(args.source,args.output,args.task)
     elif args.command=='label': result=label(args.directory,args.split,args.model,args.base_url,args.limit,args.workers)
     else: result=collect(args.directory,args.freeze)
     print(json.dumps(result,indent=2))

@@ -59,21 +59,29 @@ class DeploymentTests(unittest.TestCase):
                          ['/package/model', '/package/space'])
         api.add_space_variable.assert_any_call('owner/demo', key='MODEL_REVISION', value='checkpoint-commit')
 
-    def test_optional_dose_weights_are_only_in_private_package(self):
-        from scripts import medication_doses
+    def test_optional_checkpoint_weights_are_only_in_private_package(self):
+        from scripts import medication_doses,medication_regimens
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             report={'alignment_version':'bio','source_token_version':'tokens','threads':2,
                     'training_ids':['private-id'],'config':{'max_length':512,'compute_dtype':'bfloat16'}}
-            for folder in ('names','doses'):
+            for folder in ('names','doses','regimens'):
                 run=root/folder;run.mkdir()
                 for name in MODEL_FILES:
                     (run/name).write_text('checkpoint fixture')
                 value=dict(report)
                 if folder=='doses':value['alignment_version']=medication_doses.VERSION
+                if folder=='regimens':value['alignment_version']=medication_regimens.VERSION
                 (run/'run.json').write_text(json.dumps(value))
-            package(root/'names',root/'output',root/'doses')
+            package(root/'names',root/'output',root/'doses',root/'regimens')
             self.assertTrue((root/'output/model/dose/model.safetensors').exists())
+            self.assertTrue((root/'output/model/regimen/model.safetensors').exists())
             self.assertFalse(list((root/'output/space').rglob('*.safetensors')))
             metadata=json.loads((root/'output/model/dose/run.json').read_text())
             self.assertNotIn('training_ids',metadata)
+            regimen=json.loads((root/'output/model/regimen/run.json').read_text())
+            self.assertNotIn('training_ids',regimen)
+
+    def test_regimen_rules_require_a_dose_checkpoint(self):
+        with self.assertRaisesRegex(ValueError,'require --dose-run'):
+            package(Path('/names'),Path('/package'),regimen_rules=True)

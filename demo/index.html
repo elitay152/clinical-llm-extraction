@@ -7,10 +7,10 @@
 body { font: 17px/1.6 system-ui, sans-serif; max-width: 860px; margin: 3rem auto; padding: 0 1.2rem; color: #193344; background: #f7fafb; }
 h1 { line-height: 1.2; } textarea { box-sizing: border-box; width: 100%; min-height: 150px; font: inherit; padding: 1rem; border: 1px solid #abc; border-radius: 8px; }
 button, select { font: inherit; padding: .5rem .8rem; margin: .6rem .4rem .6rem 0; } button { background: #135e63; color: white; border: 0; border-radius: 6px; cursor: pointer; }
-#evidence { white-space: pre-wrap; padding: 1rem; background: white; border: 1px solid #d7e3e8; border-radius: 8px; } mark { background: #bcebd9; padding: .1rem 0; } mark.dose { background: #f8dfab; } pre { overflow: auto; font-size: 14px; } #status { min-height: 1.6em; } .muted { color: #536d78; }
+#evidence { white-space: pre-wrap; padding: 1rem; background: white; border: 1px solid #d7e3e8; border-radius: 8px; } mark { background: #bcebd9; padding: .1rem 0; } mark.dose { background: #f8dfab; } mark.route { background: #bddcf4; } mark.frequency { background: #e3cff5; } pre { overflow: auto; font-size: 14px; } #status { min-height: 1.6em; } .muted { color: #536d78; }
 </style>
 <h1>Medication extractor</h1>
-<p class="muted">A biomedical token classifier selects names and available dose amounts directly from your text. Route, frequency, and status are outside this task. Teacher-reference agreement does not establish clinical accuracy.</p>
+<p class="muted">A biomedical token classifier selects available medication names, doses, routes, and frequencies directly from your text. Medication status is outside this task. Teacher-reference agreement does not establish clinical accuracy.</p>
 <label for="example">Synthetic examples</label>
 <select id="example">
 <option value="0">Two medications</option><option value="1">Discontinued and current mentions</option><option value="2">Lab values</option>
@@ -52,7 +52,9 @@ document.querySelector('#form').addEventListener('submit', async event => {
     const characters = Array.from(text);
     let cursor = 0;
     const spans = data.medication_names.map(span => ({...span, kind: 'name'}));
-    spans.push(...(data.dose_spans || []).map(span => ({...span, kind: 'dose'})));
+    for (const field of ['dose', 'route', 'frequency']) {
+      spans.push(...(data[`${field}_spans`] || []).map(span => ({...span, kind: field})));
+    }
     spans.sort((a, b) => a.start - b.start);
     for (const span of spans) {
       evidence.append(document.createTextNode(characters.slice(cursor, span.start).join('')));
@@ -62,7 +64,8 @@ document.querySelector('#form').addEventListener('submit', async event => {
     evidence.append(document.createTextNode(characters.slice(cursor).join('')));
     document.querySelector('#json').textContent = JSON.stringify(data, null, 2);
     status.textContent = `${data.medication_names.length} name mention(s)` +
-      ('dose_spans' in data ? ` · ${data.dose_spans.length} dose span(s)` : '') +
+      ['dose', 'route', 'frequency'].filter(field => `${field}_spans` in data)
+        .map(field => ` · ${data[`${field}_spans`].length} ${field} span(s)`).join('') +
       ` · ${data.elapsed_seconds.toFixed(2)} s`;
     results.hidden = false;
   } catch (error) { status.textContent = error.message; }

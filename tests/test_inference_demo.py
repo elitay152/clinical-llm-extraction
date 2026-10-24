@@ -6,6 +6,7 @@ from http.server import HTTPServer
 from unittest.mock import patch
 
 from scripts.predict_medication_names import MedicationNameExtractor
+from scripts import token_classifier
 from scripts.serve_demo import make_handler
 
 
@@ -19,6 +20,7 @@ class FakeExtractor:
 class InferenceTests(unittest.TestCase):
     def test_public_output_uses_exact_unicode_offsets(self):
         extractor = MedicationNameExtractor.__new__(MedicationNameExtractor)
+        extractor.classifier = token_classifier
         with patch.object(extractor, 'predict_payload', return_value=(
                 {'medication_name_spans': [[2, 2], [4, 4]]}, 0.1)):
             text = '😀 aspirin and aspirin.'

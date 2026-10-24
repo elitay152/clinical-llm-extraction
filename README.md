@@ -1,6 +1,6 @@
 # Clinical Medication Extraction
 
-Train medication-name and dose extractors from LLM-generated, source-checked labels.
+Train medication-name, dose, route, and frequency extractors from LLM-generated, source-checked labels.
 Compare a biomedical token classifier with prompted and LoRA-tuned language
 models using frozen data splits and controlled experiments.
 
@@ -12,10 +12,10 @@ models using frozen data splits and controlled experiments.
 Enter a synthetic note to highlight medication names and inspect their exact
 source text, zero-based start positions, and exclusive end positions. The
 experimental **Names and doses** mode adds dose spans and medication–dose links;
-ambiguous doses remain unlinked. Route, frequency, and medication status are
-outside this version.
+ambiguous doses remain unlinked. The experimental regimen mode adds source-candidate route and frequency spans
+and conservative links while retaining the dose model. Medication status is outside this version.
 
-![Hosted extractor highlighting aspirin, metformin, and their doses in a synthetic note](docs/images/demo.png)
+![Hosted extractor highlighting medication names, doses, routes, and frequencies in a synthetic note](docs/images/demo.png)
 
 ## Performance
 
@@ -88,6 +88,6 @@ python -m unittest discover -s tests -v
 - [Medication schema](schemas/medications.schema.json) and [annotation protocol](docs/annotation.md)
 - [Optional offline annotation tool](docs/annotation-tool.md)
 - [Iterative classifier experiments](docs/iterative-training.md) and [training expansion](docs/training-expansion.md)
-- [Medication-name and dose extraction](docs/medication-doses.md)
+- [Medication-name and dose extraction](docs/medication-doses.md) and [routes/frequencies](docs/medication-regimens.md)
 - [Medication-name token classifier](docs/token-classifier.md) and [name-labeling rules](docs/name-labeling.md)
 - [Treatment-name training](docs/training.md)
