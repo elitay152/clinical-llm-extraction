@@ -1,0 +1,12 @@
+{
+  "epochs": 80,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "weight_decay": 0.01,
+  "seed": 42,
+  "dropout": 0.1,
+  "semantic_width": 32,
+  "layout_width": 16,
+  "rule_prior_logit": 2.0,
+  "threshold": 0.5
+}
