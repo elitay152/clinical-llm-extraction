@@ -83,6 +83,41 @@ class MedicationDoseTests(unittest.TestCase):
                 return {'start':start,'end':start+len(value),'text':value}
             self.assertEqual(medication_doses.link_doses(text,[span(n) for n in names],[span(dose)]),expected)
 
+    def test_explicit_dose_introductions_and_routes_link_the_correct_name(self):
+        for text in ['warfarin at a dose of 5 mg', 'warfarin in the dose of 5 mg',
+                     'warfarin in the dose 5 mg', 'warfarin at a maximal dosage of 5 mg',
+                     'warfarin, dose reduced to 5 mg', 'warfarin dosage was 5 mg',
+                     'warfarin orally at a dose of 5 mg', '5 mg of oral warfarin',
+                     '5 mg daily oral warfarin', '5 mg intravenous warfarin',
+                     'warfarin at a dose of 5 mg was not started']:
+            def span(value):
+                start=text.index(value)
+                return {'start':start,'end':start+len(value),'text':value}
+            names,doses=[span('warfarin')],[span('5 mg')]
+            expected=[{'medication_index':0,'dose_index':0}]
+            self.assertEqual(medication_doses.link_doses(text,names,doses),expected,text)
+            self.assertEqual(medication_doses.link_doses(text,names,doses,rule='conservative-local-rule-v1'),[],text)
+
+    def test_expanded_connectors_do_not_cross_unrelated_clauses(self):
+        for text in ['warfarin was stopped. Start 5 mg', 'warfarin was stopped; 5 mg',
+                     'warfarin is unrelated to 5 mg', 'warfarin\n5 mg']:
+            def span(value):
+                start=text.index(value)
+                return {'start':start,'end':start+len(value),'text':value}
+            self.assertEqual(medication_doses.link_doses(text,[span('warfarin')],[span('5 mg')]),[],text)
+        with self.assertRaises(ValueError):
+            medication_doses.link_doses('',[],[],rule='unknown')
+
+    def test_rule_comparison_changes_links_without_changing_entity_scores(self):
+        record=fixture('aspirin at a dose of 81 mg and metformin 500 mg.')
+        payload=dict(name_spans.reference_payload(record),dose_spans=medication_doses.reference_spans(record))
+        before=medication_doses.score([record],[payload],linking_rule='conservative-local-rule-v1')
+        after=medication_doses.score([record],[payload])
+        self.assertEqual(before['names'],after['names'])
+        self.assertEqual(before['doses'],after['doses'])
+        self.assertEqual(before['medication_dose_pairs']['fn'],1)
+        self.assertEqual(after['medication_dose_pairs']['f1'],1)
+
     def test_unlinked_doses_and_missing_attributes_remain_explicit(self):
         record=fixture()
         payload={'medication_name_spans':[[2,2],[6,6]],'dose_spans':[]}

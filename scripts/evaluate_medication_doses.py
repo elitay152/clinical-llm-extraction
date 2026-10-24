@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--name-baseline',type=Path)
     parser.add_argument('--training-diagnostic',action='store_true')
+    parser.add_argument('--linking-rule',choices=medication_doses.LINKING_RULES,default=medication_doses.LINKING_RULE)
     args=parser.parse_args()
     if args.output.exists():
         raise ValueError('Choose a new output directory')
@@ -38,13 +39,13 @@ def main():
         raise ValueError('No reference records')
     model=MedicationNameExtractor(args.run)
     predictions=[model.predict_payload(r['text'])[0] for r in references]
-    metrics=medication_doses.score(references,predictions)
+    metrics=medication_doses.score(references,predictions,linking_rule=args.linking_rule)
     oracle_predictions=[dict(name_spans.reference_payload(r),dose_spans=medication_doses.reference_spans(r)) for r in references]
     result={'split':'training_diagnostic' if args.training_diagnostic else 'development',
-            'metrics':metrics, 'rule_with_reference_entities':medication_doses.score(references,oracle_predictions),
+            'metrics':metrics, 'rule_with_reference_entities':medication_doses.score(references,oracle_predictions,linking_rule=args.linking_rule),
             'reference_labels_sha256':hashlib.sha256((directory/('train.jsonl' if args.training_diagnostic else 'development.jsonl')).read_bytes()).hexdigest(),
             'interpretation':'Exact agreement with AI-generated/source-checked references; not clinical accuracy.',
-            'dose_linking':'conservative-local-rule-v1'}
+            'dose_linking':args.linking_rule}
     if args.name_baseline:
         baseline=MedicationNameExtractor(args.name_baseline)
         if baseline.classifier is medication_doses:
@@ -60,7 +61,7 @@ def main():
             ends={t['end']:i+1 for i,t in enumerate(tokens)}
             candidates=medication_doses.dose_candidates(record['text'])
             candidate_predictions.append(dict(payload,dose_spans=[[starts[s['start']],ends[s['end']]] for s in candidates]))
-        result['names_plus_candidate_baseline']=medication_doses.score(references,candidate_predictions)
+        result['names_plus_candidate_baseline']=medication_doses.score(references,candidate_predictions,linking_rule=args.linking_rule)
         old=name_spans.score(references,responses)
         result['name_baseline']=old
         result['name_f1_change']=metrics['names']['f1']-old['exact_name_spans']['f1']

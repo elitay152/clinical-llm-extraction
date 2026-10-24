@@ -61,13 +61,17 @@ printf 'The patient takes aspirin 81 mg daily.' | \
 The evaluator compares name extraction with the supplied names-only checkpoint
 on identical notes and unchanged name references. It also measures a baseline
 using the names-only model plus all dose candidates, and the linking rule with
-reference entities. The latter separates association failures from entity errors.
+reference entities. The latter separates association failures from entity errors. Use
+`--linking-rule conservative-local-rule-v1` to evaluate the baseline linking rule;
+the default is `conservative-local-rule-v2`.
 These are development-set comparisons against teacher labels, not test or clinical
 accuracy estimates. Detailed metrics and predictions stay in ignored artifacts.
 
 Inference returns names, dose spans, per-name `doses` lists, and `unlinked_doses`.
-Offsets count Unicode code points with exclusive ends. The rule handles simple
-local name–dose phrases and abstains on ambiguous candidates and bare coordinated
-lists; it cannot reliably handle distant references or complex schedules. An
+Offsets count Unicode code points with exclusive ends. The rule handles local
+name–dose phrases, explicit dose introductions
+(such as "at a dose of"), and route text between an amount and name. It abstains
+on ambiguous candidates and bare coordinated lists; it cannot reliably handle
+distant references or complex schedules. An
 unlinked dose stays visible instead of being assigned to a guessed medication.
 The existing names-only checkpoints and commands retain their output format.

@@ -7,6 +7,14 @@ from scripts import name_spans, token_classifier
 VERSION = 'medication-name-dose-bio-v1'
 PROTOCOL = 'medication-dose-candidates-v1'
 LABELS = token_classifier.LABELS + ['B-DOSE', 'I-DOSE']
+LINKING_RULE = 'conservative-local-rule-v2'
+LINKING_RULES = ('conservative-local-rule-v1', LINKING_RULE)
+_ROUTE = r'(?:oral(?:ly)?|intravenous(?:ly)?|IV|intramuscular(?:ly)?|IM|subcutaneous(?:ly)?|SC|inhaled|topical(?:ly)?)'
+_DOSE_INTRO = (r'(?:(?:at|in|with)\s+(?:(?:a|the)\s+)?(?:(?:starting|initial|maximal)\s+)?'
+               r'(?:dose|dosage)(?:\s+of)?|(?:dose|dosage)\s+(?:reduced\s+to|was|is)|'
+               r'dose(?:\s+of)?|at|to|is|was|of)')
+_AFTER_NAME = re.compile(r'\s*[,:(=]?\s*(?:'+_ROUTE+r'\s+)?(?:'+_DOSE_INTRO+r'\s*)?', re.I)
+_BEFORE_NAME = re.compile(r'\s*(?:of\s+)?(?:(?:once\s+)?daily\s+)?(?:'+_ROUTE+r'\s+)?\(?\s*', re.I)
 
 CANDIDATE_VERSION = 'dose-amount-candidates-v1'
 _AMOUNT = r'(?:\d+(?:\.\d+)?(?:\s*[-–/]\s*\d+(?:\.\d+)?)?|one|two|three|four|five|six|half|quarter)'
@@ -100,19 +108,26 @@ def resolve(text, payload):
     return names, doses
 
 
-def link_doses(text, names, doses):
+def link_doses(text, names, doses, rule=LINKING_RULE):
+    if rule not in LINKING_RULES:
+        raise ValueError('Unknown dose linking rule')
     relations = []
     for dose_index, dose in enumerate(doses):
         candidates = []
         for index, name in enumerate(names):
             if name['end'] <= dose['start']:
                 gap = text[name['end']:dose['start']]
-                if (len(gap) <= 40 and not re.search(r'[\n\r;.!?]', gap)
-                        and re.fullmatch(r'\s*(?:(?:at|to|dose(?: of)?|is|was|:|=|\()\s*)?', gap, re.I)):
+                allowed = (re.fullmatch(r'\s*(?:(?:at|to|dose(?: of)?|is|was|:|=|\()\s*)?', gap, re.I)
+                           if rule == 'conservative-local-rule-v1' else _AFTER_NAME.fullmatch(gap))
+                if len(gap) <= (40 if rule == 'conservative-local-rule-v1' else 64) and not re.search(r'[\n\r;.!?]', gap) and allowed:
                     candidates.append(index)
             elif dose['end'] <= name['start']:
                 gap = text[dose['end']:name['start']]
-                if len(gap) <= 20 and '\n' not in gap and re.fullmatch(r'\s*(?:of\s+)?', gap, re.I):
+                allowed = (re.fullmatch(r'\s*(?:of\s+)?', gap, re.I)
+                           if rule == 'conservative-local-rule-v1' else _BEFORE_NAME.fullmatch(gap))
+                maximum = 20 if rule == 'conservative-local-rule-v1' else 40
+                boundary = '\n' in gap if rule == 'conservative-local-rule-v1' else bool(re.search(r'[\n\r;.!?]', gap))
+                if len(gap) <= maximum and not boundary and allowed:
                     candidates.append(index)
         if len(candidates) != 1:
             continue
@@ -135,7 +150,7 @@ def output(text, payload):
                                                    if r['medication_index'] == index]}
                             for index, name in enumerate(names)],
             'unlinked_doses': [dose for index, dose in enumerate(doses) if index not in linked],
-            'dose_linking': 'conservative-local-rule-v1'}
+            'dose_linking': LINKING_RULE}
 
 
 def synthetic_negatives():
@@ -143,7 +158,7 @@ def synthetic_negatives():
             for row in name_spans.synthetic_negatives()]
 
 
-def score(references, predictions):
+def score(references, predictions, linking_rule=LINKING_RULE):
     counts = {key: [0, 0, 0] for key in ('names', 'doses', 'medication_dose_pairs')}
     def span_key(span):
         return span['start'], span['end']
@@ -152,7 +167,7 @@ def score(references, predictions):
         names = name_spans.resolve_response(record, json.dumps(name_spans.reference_payload(record)))
         doses = record['dose_mentions']
         predicted_names, predicted_doses = resolve(record['text'], prediction)
-        predicted_relations = link_doses(record['text'], predicted_names, predicted_doses)
+        predicted_relations = link_doses(record['text'], predicted_names, predicted_doses, rule=linking_rule)
         expected = {'names': {span_key(s) for s in names}, 'doses': {span_key(s) for s in doses},
                     'medication_dose_pairs': {(span_key(names[r['medication_index']]), span_key(doses[r['dose_index']]))
                                               for r in record['dose_relations']}}
